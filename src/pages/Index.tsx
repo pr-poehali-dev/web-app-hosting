@@ -1,83 +1,116 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 
+// Текущая роль пользователя (в реальном приложении берётся из auth)
+// "owner" | "admin" | "subscriber" | "guest"
+const CURRENT_USER = {
+  name: "Вы",
+  initials: "ВП",
+  role: "subscriber" as "owner" | "admin" | "subscriber" | "guest",
+};
+
+// Структура разделов — type: "chat" (все пишут) | "readonly" (только автор) | "feed" (лента идей)
 const NAV_ITEMS = [
-  { id: "ideas", label: "Идеи", icon: "Lightbulb" },
-  { id: "chat", label: "Общий чат", icon: "MessageSquare" },
-  { id: "metals", label: "Металлы", icon: "Gem" },
-  { id: "oil", label: "Газ / Нефть", icon: "Flame" },
-  { id: "products", label: "Продукты", icon: "BarChart2" },
-  { id: "reviews", label: "Обзоры", icon: "FileText" },
-  { id: "knowledge", label: "База знаний", icon: "BookOpen" },
-  { id: "techchat", label: "Технический чат", icon: "Terminal" },
-  { id: "access", label: "Доступ", icon: "Shield" },
-  { id: "lobby", label: "Прихожая", icon: "DoorOpen" },
+  { id: "intraday",   label: "Интрадей и мысли", icon: "Lightbulb",    type: "readonly", desc: "Текущие торговые идеи автора" },
+  { id: "chat",       label: "Общий чат",         icon: "MessageSquare",type: "chat",     desc: "Общение всех подписчиков" },
+  { id: "metals",     label: "Металлы",            icon: "Gem",          type: "chat",     desc: "Идеи и обсуждение металлов" },
+  { id: "oil",        label: "Газ / Нефть",        icon: "Flame",        type: "chat",     desc: "Идеи по нефти и газу" },
+  { id: "products",   label: "Продукты",           icon: "Wheat",        type: "chat",     desc: "Сельхозтовары и сырьё" },
+  { id: "video",      label: "Видео-обзоры",       icon: "Video",        type: "readonly", desc: "Обзоры рынка от автора" },
+  { id: "tech",       label: "Техвопросы",         icon: "Wrench",       type: "chat",     desc: "Технические вопросы" },
+  { id: "access_info",label: "Доступ",             icon: "KeyRound",     type: "readonly", desc: "Инструкции по доступу и VPN" },
+  { id: "knowledge",  label: "База знаний",        icon: "BookOpen",     type: "readonly", desc: "Обучающие материалы" },
+  { id: "subscribe",  label: "Подписка",           icon: "CreditCard",   type: "payment",  desc: "Тарифы и оплата" },
 ];
 
 const TICKER_DATA = [
   { sym: "XAU/USD", price: "2 347.80", change: "+0.42%" },
-  { sym: "XAG/USD", price: "27.84", change: "-0.18%" },
-  { sym: "BRENT", price: "83.15", change: "+1.12%" },
-  { sym: "WTI", price: "78.92", change: "+0.87%" },
-  { sym: "NG", price: "2.431", change: "-0.55%" },
-  { sym: "BTC/USD", price: "67 420", change: "+2.31%" },
-  { sym: "EUR/USD", price: "1.0842", change: "-0.09%" },
+  { sym: "XAG/USD", price: "27.84",    change: "-0.18%" },
+  { sym: "BRENT",   price: "83.15",    change: "+1.12%" },
+  { sym: "WTI",     price: "78.92",    change: "+0.87%" },
+  { sym: "NG",      price: "2.431",    change: "-0.55%" },
+  { sym: "BTC/USD", price: "67 420",   change: "+2.31%" },
+  { sym: "EUR/USD", price: "1.0842",   change: "-0.09%" },
   { sym: "S&P 500", price: "5 248.80", change: "+0.33%" },
 ];
 
-const IDEAS = [
-  { author: "Сергей К.", time: "14 мин назад", asset: "XAU/USD", dir: "LONG", entry: "2 330", tp: "2 380", sl: "2 310", desc: "Пробой сопротивления на H4. Объёмы подтверждают движение.", likes: 24, tag: "Металлы" },
-  { author: "Андрей М.", time: "1 ч назад", asset: "BRENT", dir: "SHORT", entry: "84.20", tp: "81.50", sl: "85.80", desc: "Дивергенция RSI на D1. Ожидаю коррекцию к 200MA.", likes: 18, tag: "Нефть" },
-  { author: "Елена В.", time: "3 ч назад", asset: "S&P 500", dir: "LONG", entry: "5 210", tp: "5 300", sl: "5 160", desc: "Сезон отчётностей. Позитивный сентимент на рынке.", likes: 31, tag: "Индексы" },
-  { author: "Максим Д.", time: "5 ч назад", asset: "EUR/USD", dir: "SHORT", entry: "1.0870", tp: "1.0780", sl: "1.0920", desc: "Данные по инфляции ЕС разочаровали. ФРС ужесточает риторику.", likes: 12, tag: "Форекс" },
-];
+// Сообщения для чатов (по разделу)
+const MESSAGES: Record<string, { user: string; role: string; time: string; text: string }[]> = {
+  chat: [
+    { user: "Автор",     role: "owner",      time: "14:45", text: "Друзья, завтра важный день — решение ФРС по ставке. Держим руку на пульсе." },
+    { user: "Сергей К.", role: "subscriber", time: "14:32", text: "XAU пробивает 2350 — ждём продолжения до 2380" },
+    { user: "Андрей М.", role: "subscriber", time: "14:29", text: "По нефти пока флэт. Жду данных по запасам в среду." },
+    { user: "Иван Р.",   role: "subscriber", time: "14:25", text: "Кто смотрит AAPL? Там интересная формация на часовике" },
+    { user: "Елена В.",  role: "admin",      time: "14:18", text: "Добавила обзор по металлам — смотрите раздел Видео-обзоры 👆" },
+    { user: "Дмитрий Л.",role: "subscriber", time: "14:10", text: "NG сегодня -0.5% — технически всё ещё в нисходящем канале" },
+  ],
+  metals: [
+    { user: "Автор",     role: "owner",      time: "13:50", text: "Золото: держу лонг от 2320. Цель — 2380, стоп под 2300." },
+    { user: "Сергей К.", role: "subscriber", time: "13:55", text: "Согласен. Серебро тоже подтягивается, смотрю 28.50 как ближайшую цель." },
+    { user: "Марина Т.", role: "subscriber", time: "14:02", text: "Платина отстаёт — есть идеи?" },
+    { user: "Елена В.",  role: "admin",      time: "14:08", text: "По платине пока осторожно, нет чёткого сигнала на вход." },
+  ],
+  oil: [
+    { user: "Автор",     role: "owner",      time: "12:30", text: "Brent выше 83 — ОПЕК+ держит дисциплину. Ближайшая цель 85." },
+    { user: "Андрей М.", role: "subscriber", time: "12:45", text: "WTI чуть отстаёт, спред расширяется. Слежу за инвентарями EIA." },
+    { user: "Пётр С.",   role: "subscriber", time: "13:10", text: "NG продолжает падать — хранилища переполнены в Европе." },
+  ],
+  products: [
+    { user: "Автор",     role: "owner",      time: "11:00", text: "Пшеница под давлением из-за хороших прогнозов урожая в Австралии." },
+    { user: "Кирилл Б.", role: "subscriber", time: "11:30", text: "Соя интересна от 1155 — есть поддержка на недельном графике." },
+  ],
+  tech: [
+    { user: "Елена В.",  role: "admin",      time: "10:00", text: "По вопросам доступа пишите сюда. Если проблема с VPN — смотрите раздел «Доступ»." },
+    { user: "Николай Д.",role: "subscriber", time: "10:15", text: "Не могу войти с нового телефона, пишет ошибку авторизации." },
+    { user: "Елена В.",  role: "admin",      time: "10:20", text: "Напишите мне в личку — разберёмся." },
+    { user: "Олег М.",   role: "subscriber", time: "11:05", text: "Подскажите, как настроить уведомления?" },
+  ],
+};
 
-const CHAT_MSGS = [
-  { user: "Сергей К.", time: "14:32", text: "XAU пробивает 2350 — ждём продолжения до 2380", role: "expert" },
-  { user: "Андрей М.", time: "14:29", text: "По нефти пока флэт. Жду данных по запасам в среду.", role: "member" },
-  { user: "Иван Р.", time: "14:25", text: "Кто смотрит AAPL? Там интересная формация на часовике", role: "member" },
-  { user: "Елена В.", time: "14:18", text: "Добавила обзор по металлам на этой неделе, смотрите раздел Обзоры 👆", role: "expert" },
-  { user: "Дмитрий Л.", time: "14:10", text: "Коллеги, NG сегодня -0.5% — технически всё ещё в нисходящем канале", role: "member" },
-];
+// Read-only посты (для Интрадей, Видео-обзоры, База знаний, Доступ)
+const POSTS: Record<string, { author: string; time: string; title?: string; text: string; tag?: string; videoUrl?: string }[]> = {
+  intraday: [
+    { author: "Автор", time: "15:10", title: "XAU/USD — LONG", text: "Вход от 2330, цель 2380, стоп 2305. Пробой ключевого уровня на H4 с подтверждением объёма. Risk/Reward = 1:2.1", tag: "Металлы" },
+    { author: "Автор", time: "12:40", title: "BRENT — осторожно", text: "Приближаемся к зоне сопротивления 84–85. Пока вне позиции, жду реакцию рынка перед открытием американской сессии.", tag: "Нефть" },
+    { author: "Автор", time: "09:15", title: "EUR/USD — SHORT", text: "Данные по CPI вышли хуже ожиданий. Вход 1.0870, цель 1.0780, стоп 1.0920.", tag: "Форекс" },
+  ],
+  video: [
+    { author: "Автор", time: "18 марта", title: "Недельный обзор: металлы и нефть", text: "Разбираю текущую ситуацию на рынке золота, серебра и нефти. Ключевые уровни на следующую неделю.", videoUrl: "#" },
+    { author: "Автор", time: "11 марта", title: "ФРС, доллар и сырьё", text: "Как решение ФРС повлияет на сырьевые рынки? Разбираю корреляции и торговые возможности.", videoUrl: "#" },
+    { author: "Автор", time: "4 марта",  title: "Технический анализ: паттерны этой недели", text: "Три актива с чёткими паттернами — разбираем точки входа и выхода.", videoUrl: "#" },
+  ],
+  access_info: [
+    { author: "Админ", time: "20 марта", title: "Как войти если Telegram недоступен", text: "Используйте это веб-приложение как основной канал доступа. Все материалы синхронизированы.\n\nЕсли нужен VPN — рекомендуем Outline или Lantern. Инструкция по настройке ниже в закреплённых сообщениях." },
+    { author: "Админ", time: "15 марта", title: "Рекомендуемые VPN-сервисы", text: "1. Outline — бесплатный, надёжный\n2. Lantern — простой в настройке\n3. Amnezia VPN — для продвинутых\n\nПри проблемах — пишите в раздел «Техвопросы»." },
+    { author: "Админ", time: "1 марта",  title: "Правила сообщества", text: "Запрещено: скриншоты, репосты, передача материалов третьим лицам. Нарушение → блокировка без возврата средств." },
+  ],
+  knowledge: [
+    { author: "Автор", time: "10 марта", title: "Управление капиталом: Kelly Criterion", text: "Подробный разбор формулы Келли и её применения в биржевой торговле. Как определить оптимальный размер позиции." },
+    { author: "Автор", time: "1 марта",  title: "Психология трейдинга: как не слить депозит", text: "Разбираем когнитивные ошибки трейдеров: overfitting, revenge trading, FOMO. Практические техники контроля." },
+    { author: "Автор", time: "20 фев",   title: "Технический анализ для сырьевых рынков", text: "Специфика ТА на нефти, газе и металлах. Сезонные паттерны, объёмы, COT-отчёты." },
+    { author: "Автор", time: "10 фев",   title: "Фундаментальный анализ нефтяного рынка", text: "Ключевые индикаторы: запасы EIA, буровые Baker Hughes, решения ОПЕК+. Как читать и торговать по данным." },
+  ],
+};
 
-const RATINGS = [
-  { pos: 1, name: "Сергей К.", win: "82%", ideas: 47, profit: "+340%", badge: "🥇" },
-  { pos: 2, name: "Елена В.", win: "76%", ideas: 38, profit: "+218%", badge: "🥈" },
-  { pos: 3, name: "Андрей М.", win: "71%", ideas: 52, profit: "+187%", badge: "🥉" },
-  { pos: 4, name: "Максим Д.", win: "68%", ideas: 29, profit: "+143%", badge: "" },
-  { pos: 5, name: "Иван Р.", win: "64%", ideas: 21, profit: "+98%", badge: "" },
-];
-
-const KNOWLEDGE_ITEMS = [
-  { title: "Технический анализ: паттерны продолжения", cat: "ТА", reads: 1240, level: "Средний" },
-  { title: "Торговля металлами: фундаментальные факторы", cat: "Фундаментал", reads: 890, level: "Базовый" },
-  { title: "Управление капиталом: Kelly Criterion", cat: "Риск-менедж", reads: 2100, level: "Продвинутый" },
-  { title: "Нефтяной рынок: ключевые индикаторы", cat: "Сырьё", reads: 760, level: "Средний" },
-  { title: "Психология трейдинга: контроль эмоций", cat: "Психология", reads: 3200, level: "Базовый" },
-];
+// ─────────────────────────────────────────
+// Компоненты
+// ─────────────────────────────────────────
 
 function TickerBar() {
   const [offset, setOffset] = useState(0);
   useEffect(() => {
-    const interval = setInterval(() => {
-      setOffset(prev => (prev - 1) % (TICKER_DATA.length * 160));
-    }, 30);
-    return () => clearInterval(interval);
+    const id = setInterval(() => setOffset(p => (p - 1) % (TICKER_DATA.length * 160)), 30);
+    return () => clearInterval(id);
   }, []);
-
   const items = [...TICKER_DATA, ...TICKER_DATA, ...TICKER_DATA];
-
   return (
-    <div className="h-9 flex items-center overflow-hidden bg-card border-b border-border">
-      <div
-        className="flex items-center gap-8 whitespace-nowrap pl-4"
-        style={{ transform: `translateX(${offset}px)`, transition: 'none' }}
-      >
+    <div className="h-8 flex items-center overflow-hidden bg-card border-b border-border">
+      <div className="flex items-center gap-8 whitespace-nowrap pl-4" style={{ transform: `translateX(${offset}px)`, transition: "none" }}>
         {items.map((t, i) => (
           <div key={i} className="flex items-center gap-2 flex-shrink-0">
             <span className="font-mono text-xs text-muted-foreground">{t.sym}</span>
             <span className="font-mono text-xs font-medium text-foreground">{t.price}</span>
-            <span className={`font-mono text-xs ${t.change.startsWith('+') ? 'text-green' : 'text-red'}`}>{t.change}</span>
+            <span className={`font-mono text-xs ${t.change.startsWith("+") ? "text-green" : "text-red"}`}>{t.change}</span>
           </div>
         ))}
       </div>
@@ -85,187 +118,114 @@ function TickerBar() {
   );
 }
 
-function MiniChart({ color = "#F5B942", values }: { color?: string; values: number[] }) {
-  const max = Math.max(...values);
-  const min = Math.min(...values);
-  const range = max - min || 1;
-  const w = 80, h = 32;
-  const pts = values.map((v, i) => {
-    const x = (i / (values.length - 1)) * w;
-    const y = h - ((v - min) / range) * (h - 4) - 2;
-    return `${x},${y}`;
-  }).join(' ');
-
-  return (
-    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} className="flex-shrink-0">
-      <polyline points={pts} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
-    </svg>
-  );
+function RoleBadge({ role }: { role: string }) {
+  if (role === "owner") return <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/20 text-primary font-medium">Автор</span>;
+  if (role === "admin")  return <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-400 font-medium">Админ</span>;
+  return null;
 }
 
-function IdeasSection() {
-  return (
-    <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="section-title">Торговые идеи</h2>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="pulse-dot"></div>
-          <span>Обновлено только что</span>
-        </div>
-      </div>
-      <div className="grid gap-3">
-        {IDEAS.map((idea, i) => (
-          <div key={i} className="card-trade cursor-pointer">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center text-xs font-display font-medium text-primary">
-                  {idea.author.split(' ').map((w: string) => w[0]).join('')}
-                </div>
-                <div>
-                  <div className="text-sm font-medium text-foreground">{idea.author}</div>
-                  <div className="text-xs text-muted-foreground">{idea.time}</div>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-0.5 rounded bg-secondary text-muted-foreground">{idea.tag}</span>
-                <span className={`text-xs px-2 py-0.5 rounded font-mono font-medium ${idea.dir === 'LONG' ? 'badge-up' : 'badge-down'}`}>
-                  {idea.dir}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-6 mb-3 text-xs font-mono flex-wrap">
-              <div><span className="text-muted-foreground">Актив </span><span className="text-primary font-medium">{idea.asset}</span></div>
-              <div><span className="text-muted-foreground">Вход </span><span className="text-foreground">{idea.entry}</span></div>
-              <div><span className="text-muted-foreground">ТП </span><span className="text-green">{idea.tp}</span></div>
-              <div><span className="text-muted-foreground">СЛ </span><span className="text-red">{idea.sl}</span></div>
-            </div>
-            <p className="text-sm text-muted-foreground leading-relaxed mb-3">{idea.desc}</p>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <button className="flex items-center gap-1 hover:text-primary transition-colors">
-                <Icon name="ThumbsUp" size={13} /><span>{idea.likes}</span>
-              </button>
-              <button className="flex items-center gap-1 hover:text-primary transition-colors">
-                <Icon name="MessageSquare" size={13} /><span>Комментарий</span>
-              </button>
-              <button className="flex items-center gap-1 hover:text-primary transition-colors">
-                <Icon name="Bookmark" size={13} /><span>Сохранить</span>
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+function UserAvatar({ name, role, size = "sm" }: { name: string; role: string; size?: "sm" | "md" }) {
+  const initials = name.split(" ").map(w => w[0]).join("").slice(0, 2);
+  const sz = size === "md" ? "w-10 h-10 text-sm" : "w-7 h-7 text-xs";
+  const bg = role === "owner" ? "bg-primary text-primary-foreground" : role === "admin" ? "bg-blue-500/20 text-blue-400" : "bg-secondary text-muted-foreground";
+  return <div className={`${sz} ${bg} rounded-full flex items-center justify-center font-display flex-shrink-0`}>{initials}</div>;
 }
 
-function ChatSection({ title }: { title: string }) {
+// Чат с правом писать для всех (или только для автора/админа если readonly)
+function ChatSection({ sectionId, title, readonly = false }: { sectionId: string; title: string; readonly?: boolean }) {
   const [msg, setMsg] = useState("");
+  const msgs = MESSAGES[sectionId] || [];
+  const canWrite = !readonly || CURRENT_USER.role === "owner" || CURRENT_USER.role === "admin";
+
   return (
-    <div className="animate-fade-in flex flex-col" style={{ minHeight: '500px' }}>
+    <div className="animate-fade-in flex flex-col" style={{ minHeight: 500 }}>
       <div className="flex items-center justify-between mb-4">
         <h2 className="section-title">{title}</h2>
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <div className="pulse-dot"></div>
-          <span>47 участников онлайн</span>
+          <div className="pulse-dot" />
+          <span>онлайн</span>
         </div>
       </div>
-      <div className="card-trade mb-3 overflow-y-auto flex-1" style={{ maxHeight: '420px' }}>
+
+      {readonly && (
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded bg-secondary/50 border border-border text-xs text-muted-foreground">
+          <Icon name="Lock" size={12} />
+          <span>Только автор может публиковать в этом разделе</span>
+        </div>
+      )}
+
+      <div className="card-trade mb-3 overflow-y-auto flex-1" style={{ maxHeight: 440 }}>
         <div className="space-y-4">
-          {CHAT_MSGS.map((m, i) => (
+          {msgs.map((m, i) => (
             <div key={i} className="flex items-start gap-3">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-display flex-shrink-0 ${m.role === 'expert' ? 'bg-primary text-primary-foreground' : 'bg-secondary text-muted-foreground'}`}>
-                {m.user.split(' ').map((w: string) => w[0]).join('')}
-              </div>
+              <UserAvatar name={m.user} role={m.role} />
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className={`text-xs font-medium ${m.role === 'expert' ? 'text-primary' : 'text-foreground'}`}>{m.user}</span>
-                  {m.role === 'expert' && <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary">Эксперт</span>}
+                <div className="flex items-center gap-2 mb-1 flex-wrap">
+                  <span className={`text-xs font-medium ${m.role === "owner" ? "text-primary" : m.role === "admin" ? "text-blue-400" : "text-foreground"}`}>{m.user}</span>
+                  <RoleBadge role={m.role} />
                   <span className="text-xs text-muted-foreground">{m.time}</span>
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed">{m.text}</p>
+                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{m.text}</p>
               </div>
             </div>
           ))}
         </div>
       </div>
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          value={msg}
-          onChange={e => setMsg(e.target.value)}
-          placeholder="Написать сообщение..."
-          className="flex-1 bg-secondary border border-border rounded px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
-        />
-        <button className="px-4 py-2 bg-primary text-primary-foreground rounded text-sm font-medium hover:bg-primary/90 transition-colors">
-          <Icon name="Send" size={15} />
-        </button>
-      </div>
+
+      {canWrite && (
+        <div className="flex items-center gap-2">
+          <input
+            type="text"
+            value={msg}
+            onChange={e => setMsg(e.target.value)}
+            placeholder="Написать сообщение..."
+            className="flex-1 bg-secondary border border-border rounded px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
+          />
+          <button className="px-3 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors">
+            <Icon name="Send" size={15} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-function MarketSection({ title, items }: { title: string; items: { name: string; price: string; change: string; vol: string; chart: number[] }[] }) {
+// Лента read-only постов (Интрадей, Видео-обзоры, База знаний, Доступ)
+function PostFeed({ sectionId, title, showVideo = false }: { sectionId: string; title: string; showVideo?: boolean }) {
+  const posts = POSTS[sectionId] || [];
   return (
     <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h2 className="section-title">{title}</h2>
-        <button className="text-xs text-muted-foreground hover:text-primary transition-colors flex items-center gap-1">
-          <Icon name="RefreshCw" size={12} /><span>Обновить</span>
-        </button>
-      </div>
-      <div className="grid gap-3">
-        {items.map((item, i) => (
-          <div key={i} className="card-trade flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-10 h-10 rounded bg-secondary flex items-center justify-center flex-shrink-0">
-                <span className="font-mono text-xs text-muted-foreground">{item.name.slice(0, 2)}</span>
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm font-medium text-foreground truncate">{item.name}</div>
-                <div className="text-xs text-muted-foreground">Объём: {item.vol}</div>
-              </div>
-            </div>
-            <MiniChart values={item.chart} color={item.change.startsWith('+') ? '#22c55e' : '#ef4444'} />
-            <div className="text-right flex-shrink-0">
-              <div className="font-mono text-sm font-medium text-foreground">{item.price}</div>
-              <div className={`text-xs font-mono ${item.change.startsWith('+') ? 'text-green' : 'text-red'}`}>{item.change}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ReviewsSection() {
-  const reviews = [
-    { author: "Елена В.", date: "18 марта 2026", title: "Недельный обзор рынка металлов", preview: "Золото продолжает консолидацию у уровня $2340. Серебро под давлением — мировой спрос промышленного сектора снижается...", readTime: "8 мин", views: 342 },
-    { author: "Сергей К.", date: "17 марта 2026", title: "Нефтяной рынок: итоги недели", preview: "Brent держится выше $83 на фоне ограничений добычи ОПЕК+. Технически — зона сопротивления...", readTime: "6 мин", views: 218 },
-    { author: "Максим Д.", date: "15 марта 2026", title: "Форекс: EUR/USD накануне заседания ФРС", preview: "Пара консолидируется у уровня 1.0850. Основное движение ожидаем после публикации решения по ставке...", readTime: "5 мин", views: 187 },
-  ];
-  return (
-    <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="section-title">Обзоры рынка</h2>
-        <span className="text-xs text-muted-foreground">Еженедельные материалы</span>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Icon name="Lock" size={12} />
+          <span>Только автор</span>
+        </div>
       </div>
       <div className="grid gap-4">
-        {reviews.map((r, i) => (
-          <div key={i} className="card-trade cursor-pointer">
+        {posts.map((p, i) => (
+          <div key={i} className="card-trade">
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-xs font-display text-primary-foreground">
-                {r.author.split(' ').map((w: string) => w[0]).join('')}
+              <UserAvatar name={p.author} role="owner" />
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-primary">{p.author}</span>
+                  <RoleBadge role="owner" />
+                </div>
+                <span className="text-xs text-muted-foreground">{p.time}</span>
               </div>
-              <span className="text-xs text-muted-foreground">{r.author}</span>
-              <span className="text-xs text-muted-foreground">·</span>
-              <span className="text-xs text-muted-foreground">{r.date}</span>
+              {p.tag && <span className="ml-auto text-xs px-2 py-0.5 rounded bg-secondary text-muted-foreground">{p.tag}</span>}
             </div>
-            <h3 className="font-display text-base font-medium text-foreground mb-2">{r.title}</h3>
-            <p className="text-sm text-muted-foreground leading-relaxed mb-3">{r.preview}</p>
-            <div className="flex items-center gap-4 text-xs text-muted-foreground">
-              <span className="flex items-center gap-1"><Icon name="Clock" size={11} />{r.readTime} чтения</span>
-              <span className="flex items-center gap-1"><Icon name="Eye" size={11} />{r.views} просмотров</span>
-            </div>
+            {p.title && <h3 className="font-display text-base font-medium text-foreground mb-2">{p.title}</h3>}
+            <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{p.text}</p>
+            {showVideo && p.videoUrl && (
+              <button className="mt-3 flex items-center gap-2 text-sm text-primary hover:text-primary/80 transition-colors">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Icon name="Play" size={14} className="text-primary ml-0.5" />
+                </div>
+                <span>Смотреть видео</span>
+              </button>
+            )}
           </div>
         ))}
       </div>
@@ -273,184 +233,148 @@ function ReviewsSection() {
   );
 }
 
-function KnowledgeSection() {
-  const [search, setSearch] = useState("");
-  const filtered = KNOWLEDGE_ITEMS.filter(k =>
-    k.title.toLowerCase().includes(search.toLowerCase()) ||
-    k.cat.toLowerCase().includes(search.toLowerCase())
-  );
+// Раздел подписки и оплаты
+function SubscribeSection() {
+  const [payMethod, setPayMethod] = useState<"auto" | "manual">("auto");
+  const [plan, setPlan] = useState<"month" | "quarter" | "year" | "invite">("month");
+
+  const plans = [
+    { id: "month",   label: "1 месяц",    price: "$97",  sub: "" },
+    { id: "quarter", label: "3 месяца",   price: "$249", sub: "−14%" },
+    { id: "year",    label: "12 месяцев", price: "$797", sub: "−31%" },
+    { id: "invite",  label: "По приглашению", price: "Бесплатно", sub: "Бонус от автора" },
+  ];
+
   return (
     <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="section-title">База знаний</h2>
+      <div className="mb-6">
+        <h2 className="section-title">Подписка и доступ</h2>
+        <p className="text-xs text-muted-foreground mt-1">Выберите тариф и способ оплаты</p>
       </div>
-      <div className="mb-4 relative">
-        <Icon name="Search" size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Поиск по базе знаний..."
-          className="w-full bg-secondary border border-border rounded pl-9 pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
-        />
+
+      {/* Тарифы */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        {plans.map(p => (
+          <button
+            key={p.id}
+            onClick={() => setPlan(p.id as typeof plan)}
+            className={`card-trade text-left transition-all ${plan === p.id ? "border-primary/60 bg-primary/5" : ""}`}
+          >
+            <div className="flex items-start justify-between mb-1">
+              <span className="text-sm font-medium text-foreground">{p.label}</span>
+              {p.sub && <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${p.id === "invite" ? "bg-blue-500/15 text-blue-400" : "bg-green/10 text-green"}`}>{p.sub}</span>}
+            </div>
+            <span className={`font-mono font-medium ${p.id === "invite" ? "text-blue-400 text-sm" : "text-primary text-lg"}`}>{p.price}</span>
+            {plan === p.id && <div className="mt-2 w-full h-0.5 rounded bg-primary/40" />}
+          </button>
+        ))}
       </div>
-      <div className="grid gap-3">
-        {filtered.map((k, i) => (
-          <div key={i} className="card-trade flex items-center justify-between cursor-pointer">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded bg-secondary flex items-center justify-center mt-0.5 flex-shrink-0">
-                <Icon name="BookOpen" size={14} className="text-primary" />
-              </div>
-              <div>
-                <div className="text-sm font-medium text-foreground mb-1">{k.title}</div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
-                  <span className="px-1.5 py-0.5 rounded bg-secondary">{k.cat}</span>
-                  <span className="px-1.5 py-0.5 rounded bg-secondary">{k.level}</span>
-                  <span>{k.reads.toLocaleString()} прочтений</span>
+
+      {/* Способ оплаты */}
+      {plan !== "invite" && (
+        <>
+          <div className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3">Способ оплаты</div>
+          <div className="grid grid-cols-2 gap-3 mb-5">
+            {[
+              { id: "auto",   icon: "CreditCard", label: "Банковская карта", sub: "Автопродление" },
+              { id: "manual", icon: "Receipt",     label: "Перевод / чек",    sub: "Подтверждение вручную" },
+            ].map(m => (
+              <button
+                key={m.id}
+                onClick={() => setPayMethod(m.id as "auto" | "manual")}
+                className={`card-trade text-left flex items-start gap-3 transition-all ${payMethod === m.id ? "border-primary/60 bg-primary/5" : ""}`}
+              >
+                <div className={`w-8 h-8 rounded flex items-center justify-center flex-shrink-0 mt-0.5 ${payMethod === m.id ? "bg-primary/10" : "bg-secondary"}`}>
+                  <Icon name={m.icon as "CreditCard" | "Receipt"} size={15} className={payMethod === m.id ? "text-primary" : "text-muted-foreground"} />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-foreground">{m.label}</div>
+                  <div className="text-xs text-muted-foreground">{m.sub}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {payMethod === "auto" && (
+            <div className="card-trade mb-4">
+              <div className="text-xs text-muted-foreground mb-3">Данные карты</div>
+              <div className="grid gap-2">
+                <input placeholder="Номер карты" className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors font-mono" />
+                <div className="grid grid-cols-2 gap-2">
+                  <input placeholder="ММ / ГГ" className="bg-secondary border border-border rounded px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors font-mono" />
+                  <input placeholder="CVV" className="bg-secondary border border-border rounded px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors font-mono" />
                 </div>
               </div>
             </div>
-            <Icon name="ChevronRight" size={16} className="text-muted-foreground flex-shrink-0 ml-2" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+          )}
 
-function RatingsSection() {
-  return (
-    <div className="animate-fade-in">
-      <div className="mb-6">
-        <h2 className="section-title">Рейтинг трейдеров</h2>
-        <p className="text-xs text-muted-foreground mt-1">Топ по результатам за последние 90 дней</p>
-      </div>
-      <div className="card-trade mb-6">
-        <div className="flex items-center gap-4 mb-4">
-          <div className="w-14 h-14 rounded-full bg-primary/10 border-2 border-primary flex items-center justify-center text-xl font-display text-primary">
-            ВП
-          </div>
-          <div>
-            <div className="font-display text-lg text-foreground">Вы</div>
-            <div className="text-xs text-muted-foreground">Участник с февраля 2026</div>
-          </div>
-          <div className="ml-auto text-right">
-            <div className="text-xs text-muted-foreground mb-1">Позиция в рейтинге</div>
-            <div className="font-display text-2xl text-primary">#12</div>
-          </div>
-        </div>
-        <div className="grid grid-cols-3 gap-4 pt-4 border-t border-border">
-          <div className="text-center">
-            <div className="font-mono text-lg font-medium text-foreground">14</div>
-            <div className="text-xs text-muted-foreground">Идей</div>
-          </div>
-          <div className="text-center">
-            <div className="font-mono text-lg font-medium text-green">64%</div>
-            <div className="text-xs text-muted-foreground">Точность</div>
-          </div>
-          <div className="text-center">
-            <div className="font-mono text-lg font-medium text-primary">+87%</div>
-            <div className="text-xs text-muted-foreground">Результат</div>
-          </div>
-        </div>
-      </div>
-      <div className="card-trade">
-        <div className="grid grid-cols-5 gap-2 text-xs text-muted-foreground mb-3 pb-2 border-b border-border">
-          <div>#</div>
-          <div className="col-span-2">Трейдер</div>
-          <div className="text-right">Точность</div>
-          <div className="text-right">Результат</div>
-        </div>
-        {RATINGS.map((r) => (
-          <div key={r.pos} className="grid grid-cols-5 gap-2 text-sm py-2.5 border-b border-border/50 last:border-0 hover:bg-secondary/30 transition-colors rounded px-1 cursor-pointer">
-            <div className="font-mono text-muted-foreground">{r.badge || r.pos}</div>
-            <div className="col-span-2 font-medium text-foreground">{r.name}</div>
-            <div className="text-right font-mono text-green">{r.win}</div>
-            <div className="text-right font-mono text-primary">{r.profit}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+          {payMethod === "manual" && (
+            <div className="card-trade mb-4">
+              <div className="text-xs font-medium text-foreground mb-3">Реквизиты для перевода</div>
+              <div className="space-y-2 mb-4">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Банк</span>
+                  <span className="text-foreground font-mono">Сбербанк</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Карта</span>
+                  <span className="text-foreground font-mono">4276 •••• •••• 7891</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Получатель</span>
+                  <span className="text-foreground">И. О. Фамилия</span>
+                </div>
+              </div>
+              <div className="text-xs text-muted-foreground mb-2">Прикрепите скриншот / чек об оплате:</div>
+              <label className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-border rounded p-4 cursor-pointer hover:border-primary/40 transition-colors">
+                <Icon name="Upload" size={18} className="text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">Нажмите или перетащите файл</span>
+                <input type="file" className="hidden" accept="image/*" />
+              </label>
+              <p className="text-xs text-muted-foreground mt-2">После загрузки чека администратор откроет доступ в течение нескольких часов.</p>
+            </div>
+          )}
 
-function AccessSection() {
-  return (
-    <div className="animate-fade-in">
-      <div className="mb-6">
-        <h2 className="section-title">Управление доступом</h2>
-        <p className="text-xs text-muted-foreground mt-1">Условия участия в закрытом сообществе</p>
-      </div>
-      <div className="grid gap-4">
-        <div className="card-trade border-primary/30">
-          <div className="flex items-start gap-4">
-            <div className="w-10 h-10 rounded bg-primary/10 flex items-center justify-center flex-shrink-0">
-              <Icon name="Crown" size={18} className="text-primary" />
-            </div>
-            <div>
-              <div className="font-display text-base text-foreground mb-1">Подписка VIP</div>
-              <div className="text-sm text-muted-foreground mb-3">Полный доступ ко всем разделам, сигналам и обзорам</div>
-              <div className="font-mono text-xl text-primary mb-3">$97 / мес</div>
-              <button className="px-4 py-2 bg-primary text-primary-foreground rounded text-sm font-medium hover:bg-primary/90 transition-colors">
-                Оформить доступ
-              </button>
-            </div>
-          </div>
-        </div>
+          <button className="w-full py-3 bg-primary text-primary-foreground rounded text-sm font-display font-medium uppercase tracking-wide hover:bg-primary/90 transition-colors">
+            {payMethod === "auto" ? "Оплатить и получить доступ" : "Отправить на проверку"}
+          </button>
+        </>
+      )}
+
+      {plan === "invite" && (
         <div className="card-trade">
-          <div className="font-display text-sm text-foreground mb-3 uppercase tracking-wide">Что входит в подписку:</div>
-          {["Все торговые идеи и сигналы в реальном времени", "Еженедельные аналитические обзоры", "Полная база знаний по трейдингу", "Доступ к закрытым чатам с экспертами", "Push-уведомления о важных сигналах", "Личная статистика и история сделок"].map((f, i) => (
-            <div key={i} className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0">
-              <Icon name="Check" size={14} className="text-green flex-shrink-0" />
-              <span className="text-sm text-muted-foreground">{f}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LobbySection() {
-  return (
-    <div className="animate-fade-in">
-      <div className="mb-6">
-        <h2 className="section-title">Прихожая</h2>
-        <p className="text-xs text-muted-foreground mt-1">Добро пожаловать в закрытый клуб трейдеров</p>
-      </div>
-      <div className="card-trade mb-4">
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-12 h-12 rounded-full border-2 border-primary bg-primary/10 flex items-center justify-center flex-shrink-0">
-            <Icon name="Shield" size={20} className="text-primary" />
-          </div>
-          <div>
-            <div className="font-display text-base text-foreground">TradeClub Private</div>
-            <div className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <div className="pulse-dot"></div>
-              <span>213 участников · 47 онлайн</span>
-            </div>
-          </div>
-        </div>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          Закрытое сообщество профессиональных трейдеров. Торговые идеи, аналитика и сигналы в реальном времени.
-          Биржевой трейдинг — нефть, газ, металлы, форекс.
-        </p>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        {[
-          { icon: "Bell", label: "Push-уведомления", desc: "Настроить сигналы" },
-          { icon: "User", label: "Мой профиль", desc: "Статистика и история" },
-          { icon: "Settings", label: "Настройки", desc: "Аккаунт и безопасность" },
-          { icon: "HelpCircle", label: "Поддержка", desc: "Написать администратору" },
-        ].map((item, i) => (
-          <div key={i} className="card-trade cursor-pointer flex items-center gap-3">
-            <div className="w-9 h-9 rounded bg-secondary flex items-center justify-center flex-shrink-0">
-              <Icon name={item.icon as "Bell" | "User" | "Settings" | "HelpCircle"} size={16} className="text-primary" />
+          <div className="flex items-start gap-3 mb-4">
+            <div className="w-10 h-10 rounded bg-blue-500/10 flex items-center justify-center flex-shrink-0">
+              <Icon name="Gift" size={18} className="text-blue-400" />
             </div>
             <div>
-              <div className="text-sm font-medium text-foreground">{item.label}</div>
-              <div className="text-xs text-muted-foreground">{item.desc}</div>
+              <div className="text-sm font-medium text-foreground mb-1">Доступ по приглашению</div>
+              <div className="text-xs text-muted-foreground">Автор или администратор может выдать вам бесплатный доступ как бонус за активность или лояльность.</div>
             </div>
+          </div>
+          <div className="mb-3">
+            <div className="text-xs text-muted-foreground mb-2">Введите код приглашения:</div>
+            <input placeholder="INVITE-XXXXXX" className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors" />
+          </div>
+          <button className="w-full py-2.5 bg-blue-500/20 text-blue-400 rounded text-sm font-display font-medium uppercase tracking-wide hover:bg-blue-500/30 transition-colors border border-blue-500/30">
+            Активировать приглашение
+          </button>
+        </div>
+      )}
+
+      {/* Что входит */}
+      <div className="card-trade mt-5">
+        <div className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3">Что входит в подписку</div>
+        {[
+          "Раздел «Интрадей и мысли» — сигналы автора в реальном времени",
+          "Все тематические чаты (металлы, нефть, продукты)",
+          "Видео-обзоры рынка каждую неделю",
+          "Полная база знаний по трейдингу",
+          "Уведомления о важных сигналах",
+        ].map((f, i) => (
+          <div key={i} className="flex items-center gap-3 py-2 border-b border-border/40 last:border-0">
+            <Icon name="Check" size={13} className="text-green flex-shrink-0" />
+            <span className="text-sm text-muted-foreground">{f}</span>
           </div>
         ))}
       </div>
@@ -458,76 +382,59 @@ function LobbySection() {
   );
 }
 
-const METALS = [
-  { name: "Золото XAU/USD", price: "2 347.80", change: "+0.42%", vol: "142K", chart: [2290, 2310, 2295, 2330, 2320, 2340, 2348] },
-  { name: "Серебро XAG/USD", price: "27.84", change: "-0.18%", vol: "87K", chart: [28.2, 28.0, 27.9, 28.1, 27.85, 27.9, 27.84] },
-  { name: "Платина XPT/USD", price: "952.40", change: "+0.65%", vol: "23K", chart: [930, 938, 942, 945, 948, 950, 952] },
-  { name: "Палладий XPD/USD", price: "1 024.50", change: "-1.12%", vol: "15K", chart: [1060, 1048, 1040, 1035, 1030, 1028, 1024] },
-];
-
-const OIL = [
-  { name: "Brent Crude", price: "83.15", change: "+1.12%", vol: "1.2M", chart: [80, 81, 80.5, 82, 82.5, 83, 83.15] },
-  { name: "WTI Crude", price: "78.92", change: "+0.87%", vol: "980K", chart: [76, 77, 76.5, 78, 78.5, 79, 78.92] },
-  { name: "Natural Gas", price: "2.431", change: "-0.55%", vol: "340K", chart: [2.55, 2.52, 2.50, 2.48, 2.46, 2.44, 2.43] },
-  { name: "Heating Oil", price: "2.682", change: "+0.32%", vol: "95K", chart: [2.64, 2.65, 2.66, 2.67, 2.67, 2.68, 2.682] },
-];
-
-const PRODUCTS = [
-  { name: "Пшеница CBOT", price: "545.25", change: "-0.88%", vol: "210K", chart: [562, 558, 555, 552, 549, 547, 545] },
-  { name: "Кукуруза CBOT", price: "428.50", change: "+0.43%", vol: "310K", chart: [422, 424, 425, 426, 427, 428, 428.5] },
-  { name: "Соя CBOT", price: "1 182.00", change: "+1.05%", vol: "180K", chart: [1155, 1160, 1165, 1170, 1175, 1180, 1182] },
-  { name: "Сахар ICE", price: "18.42", change: "-0.22%", vol: "120K", chart: [18.6, 18.55, 18.5, 18.48, 18.45, 18.44, 18.42] },
-];
+// ─────────────────────────────────────────
+// Главный компонент
+// ─────────────────────────────────────────
 
 export default function Index() {
-  const [activeSection, setActiveSection] = useState("ideas");
+  const [active, setActive] = useState("intraday");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  const current = NAV_ITEMS.find(n => n.id === active)!;
+
   const renderSection = () => {
-    switch (activeSection) {
-      case "ideas": return <IdeasSection />;
-      case "chat": return <ChatSection title="Общий чат" />;
-      case "metals": return <MarketSection title="Металлы" items={METALS} />;
-      case "oil": return <MarketSection title="Газ / Нефть" items={OIL} />;
-      case "products": return <MarketSection title="Сельхозпродукты" items={PRODUCTS} />;
-      case "reviews": return <ReviewsSection />;
-      case "knowledge": return <KnowledgeSection />;
-      case "techchat": return <ChatSection title="Технический чат" />;
-      case "access": return <AccessSection />;
-      case "lobby": return <LobbySection />;
-      default: return <IdeasSection />;
+    switch (active) {
+      case "intraday":    return <PostFeed sectionId="intraday" title="Интрадей и мысли" />;
+      case "chat":        return <ChatSection sectionId="chat" title="Общий чат" />;
+      case "metals":      return <ChatSection sectionId="metals" title="Металлы" />;
+      case "oil":         return <ChatSection sectionId="oil" title="Газ / Нефть" />;
+      case "products":    return <ChatSection sectionId="products" title="Продукты" />;
+      case "video":       return <PostFeed sectionId="video" title="Видео-обзоры" showVideo />;
+      case "tech":        return <ChatSection sectionId="tech" title="Технические вопросы" />;
+      case "access_info": return <PostFeed sectionId="access_info" title="Доступ и VPN" />;
+      case "knowledge":   return <PostFeed sectionId="knowledge" title="База знаний" />;
+      case "subscribe":   return <SubscribeSection />;
+      default:            return <PostFeed sectionId="intraday" title="Интрадей и мысли" />;
     }
   };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      <header className="border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-40">
-        <div className="flex items-center justify-between px-4 h-12">
+      {/* Header */}
+      <header className="border-b border-border bg-card/90 backdrop-blur-sm sticky top-0 z-40">
+        <div className="flex items-center justify-between px-4 h-11">
           <div className="flex items-center gap-3">
-            <button
-              className="md:hidden text-muted-foreground hover:text-foreground transition-colors"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
-            >
+            <button className="md:hidden text-muted-foreground hover:text-foreground" onClick={() => setSidebarOpen(!sidebarOpen)}>
               <Icon name="Menu" size={18} />
             </button>
             <div className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
-                <Icon name="TrendingUp" size={13} className="text-primary-foreground" />
+              <div className="w-5 h-5 rounded bg-primary flex items-center justify-center">
+                <Icon name="TrendingUp" size={11} className="text-primary-foreground" />
               </div>
-              <span className="font-display text-sm font-medium tracking-widest text-foreground uppercase">TradeClub</span>
-              <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono">PRO</span>
+              <span className="font-display text-sm tracking-widest text-foreground uppercase">TradeClub</span>
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono">VIP</span>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <button className="relative text-muted-foreground hover:text-foreground transition-colors">
-              <Icon name="Bell" size={16} />
-              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-destructive rounded-full text-[9px] flex items-center justify-center text-white font-mono">3</span>
+              <Icon name="Bell" size={15} />
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-destructive rounded-full text-[8px] flex items-center justify-center text-white">3</span>
             </button>
-            <button className="text-muted-foreground hover:text-foreground transition-colors">
-              <Icon name="Search" size={16} />
-            </button>
-            <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-xs font-display text-primary cursor-pointer">
-              ВП
+            <div className="flex items-center gap-1.5 cursor-pointer">
+              <div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-[10px] font-display text-primary">
+                {CURRENT_USER.initials}
+              </div>
+              <span className="hidden sm:block text-xs text-muted-foreground">{CURRENT_USER.role === "subscriber" ? "Подписчик" : CURRENT_USER.role}</span>
             </div>
           </div>
         </div>
@@ -535,96 +442,99 @@ export default function Index() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className={`
-          w-52 flex-shrink-0 border-r border-border bg-card
-          ${sidebarOpen ? 'fixed inset-y-0 left-0 z-50 pt-12 shadow-2xl' : 'hidden'}
-          md:relative md:block md:pt-0 md:shadow-none md:z-auto
-        `}>
-          <div className="p-3 space-y-0.5 pt-4">
-            {NAV_ITEMS.map(item => (
-              <button
-                key={item.id}
-                onClick={() => { setActiveSection(item.id); setSidebarOpen(false); }}
-                className={`nav-item w-full text-left ${activeSection === item.id ? 'active' : ''}`}
-              >
-                <Icon name={item.icon as "Lightbulb" | "MessageSquare" | "Gem" | "Flame" | "BarChart2" | "FileText" | "BookOpen" | "Terminal" | "Shield" | "DoorOpen"} size={15} />
-                <span className="text-xs">{item.label}</span>
-              </button>
-            ))}
+        {/* Sidebar */}
+        <aside className={`w-52 flex-shrink-0 border-r border-border bg-card ${sidebarOpen ? "fixed inset-y-0 left-0 z-50 pt-11 shadow-2xl" : "hidden"} md:relative md:block md:pt-0 md:shadow-none md:z-auto`}>
+          <div className="p-2 pt-3 space-y-0.5">
+            {NAV_ITEMS.map(item => {
+              const isPayment = item.type === "payment";
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => { setActive(item.id); setSidebarOpen(false); }}
+                  className={`nav-item w-full text-left ${active === item.id ? "active" : ""} ${isPayment ? "mt-3 border border-primary/20" : ""}`}
+                >
+                  <Icon name={item.icon as string} size={14} />
+                  <span className="text-xs flex-1">{item.label}</span>
+                  {item.type === "readonly" && <Icon name="Lock" size={10} className="text-muted-foreground/50 flex-shrink-0" />}
+                  {item.type === "chat" && <div className="w-1.5 h-1.5 rounded-full bg-green flex-shrink-0" />}
+                </button>
+              );
+            })}
           </div>
-          <div className="p-3 mt-4 border-t border-border">
-            <div className="text-xs text-muted-foreground mb-2 uppercase tracking-wider font-medium">Рейтинг недели</div>
-            {RATINGS.slice(0, 3).map(r => (
-              <div key={r.pos} className="flex items-center justify-between py-1.5 text-xs">
-                <div className="flex items-center gap-2">
-                  <span>{r.badge || r.pos}</span>
-                  <span className="text-foreground truncate max-w-[80px]">{r.name.split(' ')[0]}</span>
-                </div>
-                <span className="font-mono text-primary">{r.profit}</span>
+
+          {/* Мини-профиль */}
+          <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-border bg-card">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-xs font-display text-primary">
+                {CURRENT_USER.initials}
               </div>
-            ))}
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-medium text-foreground truncate">{CURRENT_USER.name}</div>
+                <div className="text-[10px] text-muted-foreground">Подписчик · активна</div>
+              </div>
+              <button className="text-muted-foreground hover:text-foreground transition-colors">
+                <Icon name="Settings" size={13} />
+              </button>
+            </div>
           </div>
         </aside>
 
-        {sidebarOpen && (
-          <div className="fixed inset-0 bg-black/60 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />
-        )}
+        {sidebarOpen && <div className="fixed inset-0 bg-black/60 z-40 md:hidden" onClick={() => setSidebarOpen(false)} />}
 
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-3xl mx-auto px-4 py-6">
+        {/* Main */}
+        <main className="flex-1 overflow-y-auto pb-10">
+          {/* Breadcrumb */}
+          <div className="sticky top-0 z-10 px-4 py-2 bg-background/90 backdrop-blur-sm border-b border-border/50 flex items-center gap-2">
+            <Icon name={current.icon as string} size={13} className="text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">{current.label}</span>
+            <span className="text-xs text-muted-foreground/40 ml-auto">{current.desc}</span>
+          </div>
+          <div className="max-w-2xl mx-auto px-4 py-5">
             {renderSection()}
           </div>
         </main>
 
-        <aside className="hidden xl:block w-64 border-l border-border bg-card flex-shrink-0 p-4 space-y-5 overflow-y-auto">
+        {/* Right panel */}
+        <aside className="hidden xl:flex xl:flex-col w-60 border-l border-border bg-card flex-shrink-0 p-4 gap-5 overflow-y-auto">
           <div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3">Ключевые активы</div>
-            {TICKER_DATA.slice(0, 5).map((t, i) => (
-              <div key={i} className="flex items-center justify-between py-2 border-b border-border/40 last:border-0">
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium mb-3">Цены</div>
+            {TICKER_DATA.slice(0, 6).map((t, i) => (
+              <div key={i} className="flex justify-between py-1.5 border-b border-border/30 last:border-0">
                 <span className="font-mono text-xs text-muted-foreground">{t.sym}</span>
                 <div className="text-right">
                   <div className="font-mono text-xs text-foreground">{t.price}</div>
-                  <div className={`font-mono text-xs ${t.change.startsWith('+') ? 'text-green' : 'text-red'}`}>{t.change}</div>
+                  <div className={`font-mono text-[10px] ${t.change.startsWith("+") ? "text-green" : "text-red"}`}>{t.change}</div>
                 </div>
               </div>
             ))}
           </div>
+
           <div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3">Лучшие идеи недели</div>
-            {IDEAS.slice(0, 2).map((idea, i) => (
-              <div key={i} className="py-2 border-b border-border/40 last:border-0 cursor-pointer hover:bg-secondary/20 rounded px-1 transition-colors">
-                <div className="flex items-center gap-1 mb-1">
-                  <span className={`text-xs font-mono ${idea.dir === 'LONG' ? 'text-green' : 'text-red'}`}>{idea.dir}</span>
-                  <span className="text-xs text-foreground font-medium">{idea.asset}</span>
-                </div>
-                <div className="text-xs text-muted-foreground">{idea.author} · {idea.likes} ❤</div>
-              </div>
-            ))}
-          </div>
-          <div>
-            <div className="text-xs text-muted-foreground uppercase tracking-wider font-medium mb-3">Уведомления</div>
+            <div className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium mb-3">Активность</div>
             <div className="space-y-2">
               {[
-                { text: "XAU/USD +2.1% за сессию", time: "5 мин" },
-                { text: "Новый обзор: Brent Crude", time: "1 ч" },
-                { text: "Сигнал: EUR/USD SHORT", time: "2 ч" },
+                { section: "Общий чат",  msg: "XAU пробивает 2350", time: "2 мин" },
+                { section: "Металлы",    msg: "Серебро: цель 28.50", time: "8 мин" },
+                { section: "Интрадей",   msg: "Новый сигнал автора", time: "15 мин" },
               ].map((n, i) => (
-                <div key={i} className="flex items-start gap-2 text-xs">
-                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-1 flex-shrink-0"></div>
+                <div key={i} className="flex items-start gap-2 text-xs cursor-pointer hover:bg-secondary/30 rounded p-1 transition-colors">
+                  <div className="w-1 h-1 rounded-full bg-primary mt-1.5 flex-shrink-0" />
                   <div>
-                    <div className="text-foreground">{n.text}</div>
-                    <div className="text-muted-foreground">{n.time} назад</div>
+                    <div className="text-[10px] text-muted-foreground">{n.section}</div>
+                    <div className="text-foreground">{n.msg}</div>
+                    <div className="text-[10px] text-muted-foreground">{n.time} назад</div>
                   </div>
                 </div>
               ))}
             </div>
           </div>
-          <div>
+
+          <div className="mt-auto">
             <button
-              onClick={() => setActiveSection("access")}
-              className="w-full py-2.5 bg-primary text-primary-foreground rounded text-xs font-display font-medium tracking-wide uppercase hover:bg-primary/90 transition-colors"
+              onClick={() => setActive("subscribe")}
+              className="w-full py-2 bg-primary text-primary-foreground rounded text-xs font-display uppercase tracking-wide hover:bg-primary/90 transition-colors"
             >
-              Оформить доступ VIP
+              Продлить подписку
             </button>
           </div>
         </aside>
