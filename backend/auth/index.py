@@ -158,6 +158,53 @@ def handler(event: dict, context) -> dict:
                 return err("Сессия истекла", 401)
             return ok({"user": user})
 
+        # change_password
+        if action == "change_password":
+            if method != "POST":
+                return err("Метод не поддерживается", 405)
+            if not token:
+                return err("Не авторизован", 401)
+            user = get_user_by_token(conn, token)
+            if not user:
+                return err("Сессия истекла", 401)
+            old_password = body.get("old_password") or ""
+            new_password = body.get("new_password") or ""
+            if not old_password or not new_password:
+                return err("Заполни все поля")
+            if len(new_password) < 6:
+                return err("Новый пароль минимум 6 символов")
+            old_hash = hash_password(old_password)
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE id = %s AND password_hash = %s", (user["id"], old_hash))
+                if not cur.fetchone():
+                    return err("Неверный текущий пароль", 400)
+                new_hash = hash_password(new_password)
+                cur.execute("UPDATE users SET password_hash = %s WHERE id = %s", (new_hash, user["id"]))
+                conn.commit()
+            return ok({"ok": True})
+
+        # change_nickname
+        if action == "change_nickname":
+            if method != "POST":
+                return err("Метод не поддерживается", 405)
+            if not token:
+                return err("Не авторизован", 401)
+            user = get_user_by_token(conn, token)
+            if not user:
+                return err("Сессия истекла", 401)
+            new_nickname = (body.get("nickname") or "").strip()
+            if not new_nickname:
+                return err("Никнейм не может быть пустым")
+            if len(new_nickname) < 2 or len(new_nickname) > 30:
+                return err("Никнейм от 2 до 30 символов")
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE nickname = %s AND id != %s", (new_nickname, user["id"]))
+                if cur.fetchone():
+                    return err("Этот никнейм уже занят")
+                cur.execute("UPDATE users SET nickname = %s WHERE id = %s", (new_nickname, user["id"]))
+                conn.commit()
+            return ok({"ok": True, "nickname": new_nickname})
+
         return err("Неизвестное действие", 404)
     finally:
         conn.close()

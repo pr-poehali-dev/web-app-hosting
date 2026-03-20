@@ -10,6 +10,7 @@ import Register from "./pages/Register";
 import RestorePassword from "./pages/RestorePassword";
 import Paywall from "./pages/Paywall";
 import Admin from "./pages/Admin";
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/"        element={<PrivateRoute><Index /></PrivateRoute>} />
+      <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
       <Route path="/admin"   element={<AdminRoute><Admin /></AdminRoute>} />
       <Route path="/login"   element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />

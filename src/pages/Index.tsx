@@ -106,6 +106,13 @@ export default function Index() {
                 <div className="text-[10px] text-muted-foreground">{user?.role === "subscriber" ? "Подписчик" : user?.role}</div>
               </div>
               <div className="flex items-center gap-1">
+                <button
+                  onClick={() => navigate("/profile")}
+                  title="Настройки профиля"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <Icon name="Settings" size={13} />
+                </button>
                 {(user?.role === "owner" || user?.role === "admin") && (
                   <button
                     onClick={() => navigate("/admin")}
