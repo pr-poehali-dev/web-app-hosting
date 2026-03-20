@@ -8,7 +8,7 @@ export default function RestorePassword() {
         <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary/10 mb-4">
           <Icon name="KeyRound" size={24} className="text-primary" />
         </div>
-        <h1 className="font-display text-xl tracking-widest text-foreground uppercase mb-1">TradeClub</h1>
+        <h1 className="font-display text-xl tracking-widest text-foreground uppercase mb-1">RTrading CLUB</h1>
         <p className="text-sm text-muted-foreground mb-8">Восстановление пароля</p>
 
         <div className="bg-card border border-border rounded-xl p-6 shadow-sm text-left">

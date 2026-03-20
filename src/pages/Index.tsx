@@ -45,7 +45,7 @@ export default function Index() {
               <div className="w-5 h-5 rounded bg-primary flex items-center justify-center">
                 <Icon name="TrendingUp" size={11} className="text-primary-foreground" />
               </div>
-              <span className="font-display text-sm tracking-widest text-foreground uppercase">TradeClub</span>
+              <span className="font-display text-sm tracking-widest text-foreground uppercase">RTrading CLUB</span>
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono">VIP</span>
             </div>
           </div>
