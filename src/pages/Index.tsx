@@ -3,22 +3,22 @@ import { useNavigate } from "react-router-dom";
 import Icon from "@/components/ui/icon";
 import { NAV_ITEMS } from "@/components/trade/data";
 import { TickerBar, RightPanel } from "@/components/trade/Shared";
-import { ChatSection, PostFeed, SubscribeSection } from "@/components/trade/SectionContent";
+import { ChatSection, SubscribeSection } from "@/components/trade/SectionContent";
 import { useAuth } from "@/context/AuthContext";
 
 function renderSection(active: string, setActive: (id: string) => void) {
   switch (active) {
-    case "intraday":    return <PostFeed sectionId="intraday" title="Интрадей и мысли" />;
+    case "intraday":    return <ChatSection sectionId="intraday" title="Интрадей и мысли" readonly />;
     case "chat":        return <ChatSection sectionId="chat" title="Общий чат" />;
     case "metals":      return <ChatSection sectionId="metals" title="Металлы" />;
     case "oil":         return <ChatSection sectionId="oil" title="Газ / Нефть" />;
     case "products":    return <ChatSection sectionId="products" title="Продукты" />;
-    case "video":       return <PostFeed sectionId="video" title="Видео-обзоры" showVideo />;
+    case "video":       return <ChatSection sectionId="video" title="Видео-обзоры" readonly />;
     case "tech":        return <ChatSection sectionId="tech" title="Технические вопросы" />;
-    case "access_info": return <PostFeed sectionId="access_info" title="Доступ и VPN" />;
-    case "knowledge":   return <PostFeed sectionId="knowledge" title="База знаний" />;
+    case "access_info": return <ChatSection sectionId="access_info" title="Доступ и VPN" readonly />;
+    case "knowledge":   return <ChatSection sectionId="knowledge" title="База знаний" readonly />;
     case "subscribe":   return <SubscribeSection />;
-    default:            return <PostFeed sectionId="intraday" title="Интрадей и мысли" />;
+    default:            return <ChatSection sectionId="intraday" title="Интрадей и мысли" readonly />;
   }
 }
 
