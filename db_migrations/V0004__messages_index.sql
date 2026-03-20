@@ -1,0 +1,1 @@
+CREATE INDEX IF NOT EXISTS idx_messages_channel_created ON t_p91355423_web_app_hosting.messages (channel, created_at DESC);

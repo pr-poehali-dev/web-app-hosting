@@ -9,6 +9,8 @@ import json
 import os
 import base64
 import boto3
+import smtplib
+from email.mime.text import MIMEText
 from datetime import datetime, timezone
 import psycopg2
 
@@ -55,6 +57,25 @@ def get_s3():
         aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
         aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
     )
+
+def send_notify_email(to_email: str, subject: str, body_text: str):
+    try:
+        smtp_host = os.environ.get("SMTP_HOST", "smtp.gmail.com")
+        smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+        smtp_user = os.environ.get("SMTP_USER", "")
+        smtp_pass = os.environ.get("SMTP_PASS", "")
+        if not smtp_user or not smtp_pass:
+            return
+        msg = MIMEText(body_text, "plain", "utf-8")
+        msg["Subject"] = subject
+        msg["From"] = smtp_user
+        msg["To"] = to_email
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as s:
+            s.starttls()
+            s.login(smtp_user, smtp_pass)
+            s.sendmail(smtp_user, [to_email], msg.as_string())
+    except Exception:
+        pass
 
 def handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
@@ -155,6 +176,20 @@ def handler(event: dict, context) -> dict:
                 """, (user["id"], plan, amount, receipt_url))
                 req_id = cur.fetchone()[0]
                 conn.commit()
+
+            # Уведомление владельцу
+            notify_email = os.environ.get("NOTIFY_EMAIL", "")
+            if notify_email:
+                plan_label = PLANS[plan]["label"]
+                send_notify_email(
+                    notify_email,
+                    f"[TradeClub] Новая заявка на оплату #{req_id}",
+                    f"Пользователь: {user['nickname']} ({user['email']})\n"
+                    f"Тариф: {plan_label}\n"
+                    f"Сумма: {amount} ₽\n"
+                    f"Чек: {receipt_url}\n\n"
+                    f"Зайдите в панель администратора, чтобы подтвердить или отклонить заявку."
+                )
 
             return ok({"ok": True, "request_id": req_id}, 201)
 

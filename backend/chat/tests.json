@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight — 200",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "POST send без токена — 401",
+      "method": "POST",
+      "path": "/?action=send",
+      "body": {"channel": "chat", "text": "test"},
+      "expectedStatus": 401
+    },
+    {
+      "name": "GET messages без токена — 401",
+      "method": "GET",
+      "path": "/?action=messages&channel=chat",
+      "expectedStatus": 401
+    }
+  ]
+}

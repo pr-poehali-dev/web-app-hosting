@@ -1,14 +1,113 @@
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
-import { MESSAGES, POSTS, CURRENT_USER } from "./data";
+import { POSTS } from "./data";
 import { RoleBadge, UserAvatar } from "./Shared";
+import { useAuth } from "@/context/AuthContext";
+import func2url from "../../../backend/func2url.json";
+
+const CHAT_URL = func2url.chat;
+const POLL_INTERVAL = 5000;
+
+interface ChatMessage {
+  id: number;
+  text: string;
+  created_at: string;
+  nickname: string;
+  role: string;
+}
 
 // ─── ChatSection ───────────────────────────────────────────────────────────────
 
 export function ChatSection({ sectionId, title, readonly = false }: { sectionId: string; title: string; readonly?: boolean }) {
+  const { user, token } = useAuth();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [msg, setMsg] = useState("");
-  const msgs = MESSAGES[sectionId] || [];
-  const canWrite = !readonly || CURRENT_USER.role === "owner" || CURRENT_USER.role === "admin";
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isAtBottomRef = useRef(true);
+  const latestIdRef = useRef<number>(0);
+
+  const canWrite = !readonly || user?.role === "owner" || user?.role === "admin";
+
+  const scrollToBottom = () => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const fetchMessages = useCallback(async (initial = false) => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${CHAT_URL}?action=messages&channel=${sectionId}&limit=60`, {
+        headers: { "X-Auth-Token": token },
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const newMsgs: ChatMessage[] = data.messages || [];
+      if (newMsgs.length === 0) { setLoading(false); return; }
+
+      const maxId = Math.max(...newMsgs.map(m => m.id));
+      if (maxId > latestIdRef.current) {
+        latestIdRef.current = maxId;
+        setMessages(newMsgs);
+        if (initial || isAtBottomRef.current) {
+          setTimeout(scrollToBottom, 50);
+        }
+      }
+    } catch {
+      // silent
+    } finally {
+      setLoading(false);
+    }
+  }, [token, sectionId]);
+
+  useEffect(() => {
+    setMessages([]);
+    setLoading(true);
+    latestIdRef.current = 0;
+    fetchMessages(true);
+    const timer = setInterval(() => fetchMessages(false), POLL_INTERVAL);
+    return () => clearInterval(timer);
+  }, [fetchMessages]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+  };
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!msg.trim() || sending) return;
+    setSending(true);
+    setError("");
+    const text = msg.trim();
+    setMsg("");
+    try {
+      const res = await fetch(`${CHAT_URL}?action=send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Auth-Token": token! },
+        body: JSON.stringify({ channel: sectionId, text }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Ошибка отправки"); setMsg(text); return; }
+      const newMsg: ChatMessage = { id: data.id, text: data.text, created_at: data.created_at, nickname: data.nickname, role: data.role };
+      setMessages(prev => [...prev, newMsg]);
+      latestIdRef.current = data.id;
+      isAtBottomRef.current = true;
+      setTimeout(scrollToBottom, 50);
+    } catch {
+      setError("Ошибка сети"); setMsg(text);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const formatTime = (iso: string) => {
+    const d = new Date(iso);
+    return d.toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" });
+  };
 
   return (
     <div className="animate-fade-in flex flex-col" style={{ minHeight: 500 }}>
@@ -27,39 +126,68 @@ export function ChatSection({ sectionId, title, readonly = false }: { sectionId:
         </div>
       )}
 
-      <div className="card-trade mb-3 overflow-y-auto flex-1" style={{ maxHeight: 440 }}>
-        <div className="space-y-4">
-          {msgs.map((m, i) => (
-            <div key={i} className="flex items-start gap-3">
-              <UserAvatar name={m.user} role={m.role} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className={`text-xs font-medium ${m.role === "owner" ? "text-primary" : m.role === "admin" ? "text-blue-400" : "text-foreground"}`}>
-                    {m.user}
-                  </span>
-                  <RoleBadge role={m.role} />
-                  <span className="text-xs text-muted-foreground">{m.time}</span>
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="card-trade mb-3 overflow-y-auto flex-1"
+        style={{ maxHeight: 440 }}
+      >
+        {loading ? (
+          <div className="flex items-center justify-center py-12 text-muted-foreground">
+            <Icon name="Loader2" size={18} className="animate-spin mr-2" />
+            <span className="text-sm">Загрузка...</span>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground gap-2">
+            <Icon name="MessageSquare" size={28} className="opacity-30" />
+            <span className="text-sm">Пока нет сообщений. Будь первым!</span>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {messages.map(m => (
+              <div key={m.id} className="flex items-start gap-3">
+                <UserAvatar name={m.nickname} role={m.role} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <span className={`text-xs font-medium ${m.role === "owner" ? "text-primary" : m.role === "admin" ? "text-blue-400" : "text-foreground"}`}>
+                      {m.nickname}
+                    </span>
+                    <RoleBadge role={m.role} />
+                    <span className="text-xs text-muted-foreground">{formatTime(m.created_at)}</span>
+                  </div>
+                  <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line break-words">{m.text}</p>
                 </div>
-                <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">{m.text}</p>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+        )}
       </div>
 
+      {error && (
+        <div className="mb-2 px-3 py-1.5 rounded bg-destructive/10 border border-destructive/20 text-xs text-destructive flex items-center gap-1.5">
+          <Icon name="AlertCircle" size={12} /> {error}
+        </div>
+      )}
+
       {canWrite && (
-        <div className="flex items-center gap-2">
+        <form onSubmit={handleSend} className="flex items-center gap-2">
           <input
             type="text"
             value={msg}
             onChange={e => setMsg(e.target.value)}
             placeholder="Написать сообщение..."
+            maxLength={4000}
             className="flex-1 bg-secondary border border-border rounded px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
           />
-          <button className="px-3 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors">
-            <Icon name="Send" size={15} />
+          <button
+            type="submit"
+            disabled={sending || !msg.trim()}
+            className="px-3 py-2 bg-primary text-primary-foreground rounded hover:bg-primary/90 transition-colors disabled:opacity-50"
+          >
+            {sending ? <Icon name="Loader2" size={15} className="animate-spin" /> : <Icon name="Send" size={15} />}
           </button>
-        </div>
+        </form>
       )}
     </div>
   );
