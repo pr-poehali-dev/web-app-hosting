@@ -1,0 +1,30 @@
+{
+  "tests": [
+    {
+      "name": "GET /me без токена — 401",
+      "method": "GET",
+      "path": "/?action=me",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "Не авторизован"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST /login — неверные данные",
+      "method": "POST",
+      "path": "/?action=login",
+      "body": {"email": "nobody@test.ru", "password": "wrong"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "Неверный email или пароль"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "POST /register — без gdpr",
+      "method": "POST",
+      "path": "/?action=register",
+      "body": {"nickname": "testuser99", "email": "testuser99@test.ru", "password": "123456", "gdpr_consent": false},
+      "expectedStatus": 400,
+      "expectedBody": {"error": "Необходимо согласие на обработку персональных данных"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

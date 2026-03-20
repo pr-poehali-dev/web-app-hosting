@@ -1,8 +1,9 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
-import { CURRENT_USER, NAV_ITEMS, TICKER_DATA } from "@/components/trade/data";
+import { NAV_ITEMS } from "@/components/trade/data";
 import { TickerBar, RightPanel } from "@/components/trade/Shared";
 import { ChatSection, PostFeed, SubscribeSection } from "@/components/trade/SectionContent";
+import { useAuth } from "@/context/AuthContext";
 
 function renderSection(active: string, setActive: (id: string) => void) {
   switch (active) {
@@ -21,6 +22,7 @@ function renderSection(active: string, setActive: (id: string) => void) {
 }
 
 export default function Index() {
+  const { user, logout } = useAuth();
   const [active, setActive] = useState("intraday");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -54,10 +56,10 @@ export default function Index() {
             </button>
             <div className="flex items-center gap-1.5 cursor-pointer">
               <div className="w-6 h-6 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-[10px] font-display text-primary">
-                {CURRENT_USER.initials}
+                {user?.nickname?.slice(0, 2).toUpperCase() || "??"}
               </div>
               <span className="hidden sm:block text-xs text-muted-foreground">
-                {CURRENT_USER.role === "subscriber" ? "Подписчик" : CURRENT_USER.role}
+                {user?.role === "subscriber" ? "Подписчик" : user?.role}
               </span>
             </div>
           </div>
@@ -95,14 +97,18 @@ export default function Index() {
           <div className="absolute bottom-0 left-0 right-0 p-3 border-t border-border bg-card">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-full bg-primary/10 border border-primary/30 flex items-center justify-center text-xs font-display text-primary">
-                {CURRENT_USER.initials}
+                {user?.nickname?.slice(0, 2).toUpperCase() || "??"}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="text-xs font-medium text-foreground truncate">{CURRENT_USER.name}</div>
-                <div className="text-[10px] text-muted-foreground">Подписчик · активна</div>
+                <div className="text-xs font-medium text-foreground truncate">{user?.nickname}</div>
+                <div className="text-[10px] text-muted-foreground">{user?.role === "subscriber" ? "Подписчик" : user?.role}</div>
               </div>
-              <button className="text-muted-foreground hover:text-foreground transition-colors">
-                <Icon name="Settings" size={13} />
+              <button
+                onClick={logout}
+                title="Выйти"
+                className="text-muted-foreground hover:text-destructive transition-colors"
+              >
+                <Icon name="LogOut" size={13} />
               </button>
             </div>
           </div>
