@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "GET /stats без токена — 403",
+      "method": "GET",
+      "path": "/?action=stats",
+      "expectedStatus": 403,
+      "expectedBody": {"error": "Доступ запрещён"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET /users без токена — 403",
+      "method": "GET",
+      "path": "/?action=users",
+      "expectedStatus": 403,
+      "expectedBody": {"error": "Доступ запрещён"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

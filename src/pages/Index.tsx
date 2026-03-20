@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Icon from "@/components/ui/icon";
 import { NAV_ITEMS } from "@/components/trade/data";
 import { TickerBar, RightPanel } from "@/components/trade/Shared";
@@ -22,7 +23,8 @@ function renderSection(active: string, setActive: (id: string) => void) {
 }
 
 export default function Index() {
-  const { user, logout } = useAuth();
+  const { user, logout, subscription } = useAuth();
+  const navigate = useNavigate();
   const [active, setActive] = useState("intraday");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -103,14 +105,31 @@ export default function Index() {
                 <div className="text-xs font-medium text-foreground truncate">{user?.nickname}</div>
                 <div className="text-[10px] text-muted-foreground">{user?.role === "subscriber" ? "Подписчик" : user?.role}</div>
               </div>
-              <button
-                onClick={logout}
-                title="Выйти"
-                className="text-muted-foreground hover:text-destructive transition-colors"
-              >
-                <Icon name="LogOut" size={13} />
-              </button>
+              <div className="flex items-center gap-1">
+                {(user?.role === "owner" || user?.role === "admin") && (
+                  <button
+                    onClick={() => navigate("/admin")}
+                    title="Панель администратора"
+                    className="text-muted-foreground hover:text-primary transition-colors"
+                  >
+                    <Icon name="Shield" size={13} />
+                  </button>
+                )}
+                <button
+                  onClick={logout}
+                  title="Выйти"
+                  className="text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  <Icon name="LogOut" size={13} />
+                </button>
+              </div>
             </div>
+            {subscription && (
+              <div className="mt-2 text-[10px] text-muted-foreground flex items-center gap-1">
+                <Icon name="CheckCircle" size={10} className="text-green" />
+                до {new Date(subscription.expires_at).toLocaleDateString("ru")}
+              </div>
+            )}
           </div>
         </aside>
 

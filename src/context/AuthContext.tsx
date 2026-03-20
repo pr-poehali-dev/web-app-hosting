@@ -1,7 +1,8 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
 import func2url from "../../backend/func2url.json";
 
 const AUTH_URL = func2url.auth;
+const SUBS_URL = func2url.subscriptions;
 
 export interface User {
   id: number;
@@ -11,13 +12,26 @@ export interface User {
   is_blocked?: boolean;
 }
 
+export interface Subscription {
+  id: number;
+  plan: string;
+  plan_label: string;
+  status: string;
+  started_at: string;
+  expires_at: string;
+}
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
+  subscription: Subscription | null;
+  hasAccess: boolean;
   loading: boolean;
+  subLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (data: RegisterData) => Promise<void>;
   logout: () => Promise<void>;
+  refreshSubscription: () => Promise<void>;
 }
 
 interface RegisterData {
@@ -33,17 +47,35 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(() => localStorage.getItem("auth_token"));
+  const [subscription, setSubscription] = useState<Subscription | null>(null);
   const [loading, setLoading] = useState(true);
+  const [subLoading, setSubLoading] = useState(false);
+
+  const fetchSubscription = useCallback(async (tok: string) => {
+    setSubLoading(true);
+    try {
+      const r = await fetch(`${SUBS_URL}?action=status`, { headers: { "X-Auth-Token": tok } });
+      const d = await r.json();
+      setSubscription(d.subscription || null);
+    } catch {
+      setSubscription(null);
+    } finally {
+      setSubLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!token) { setLoading(false); return; }
-    fetch(`${AUTH_URL}?action=me`, {
-      headers: { "X-Auth-Token": token },
-    })
+    fetch(`${AUTH_URL}?action=me`, { headers: { "X-Auth-Token": token } })
       .then(r => r.json())
       .then(data => {
-        if (data.user) setUser(data.user);
-        else { setToken(null); localStorage.removeItem("auth_token"); }
+        if (data.user) {
+          setUser(data.user);
+          fetchSubscription(token);
+        } else {
+          setToken(null);
+          localStorage.removeItem("auth_token");
+        }
       })
       .catch(() => { setToken(null); localStorage.removeItem("auth_token"); })
       .finally(() => setLoading(false));
@@ -53,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("auth_token", tok);
     setToken(tok);
     setUser(usr);
+    fetchSubscription(tok);
   };
 
   const login = async (email: string, password: string) => {
@@ -87,10 +120,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("auth_token");
     setToken(null);
     setUser(null);
+    setSubscription(null);
   };
 
+  const refreshSubscription = async () => {
+    if (token) await fetchSubscription(token);
+  };
+
+  // owner и admin всегда имеют доступ; subscriber — только при активной подписке
+  const hasAccess = !!user && (
+    user.role === "owner" ||
+    user.role === "admin" ||
+    !!subscription
+  );
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, register, logout }}>
+    <AuthContext.Provider value={{
+      user, token, subscription, hasAccess,
+      loading, subLoading,
+      login, register, logout, refreshSubscription,
+    }}>
       {children}
     </AuthContext.Provider>
   );

@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "GET /plans без токена — 401",
+      "method": "GET",
+      "path": "/?action=plans",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "Не авторизован"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET /status без токена — 401",
+      "method": "GET",
+      "path": "/?action=status",
+      "expectedStatus": 401,
+      "expectedBody": {"error": "Не авторизован"},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
