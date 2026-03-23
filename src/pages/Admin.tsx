@@ -290,17 +290,30 @@ function InvitesPanel({ token }: { token: string | null }) {
 
   const invites = (data as { invites?: Record<string, unknown>[] } | null)?.invites || [];
 
+  const [createError, setCreateError] = useState("");
+
   const createInvite = async () => {
     setCreating(true);
-    const resp = await fetch(`${ADMIN_URL}?action=create_invite`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Auth-Token": token || "" },
-      body: JSON.stringify({ days: parseInt(days) }),
-    });
-    const d = await resp.json();
-    setNewCode(d.code);
-    setCreating(false);
-    refetch();
+    setCreateError("");
+    setNewCode("");
+    try {
+      const resp = await fetch(`${ADMIN_URL}?action=create_invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Auth-Token": token || "" },
+        body: JSON.stringify({ days: parseInt(days) }),
+      });
+      const d = await resp.json();
+      if (!resp.ok || d.error) {
+        setCreateError(d.error || "Ошибка при создании");
+      } else {
+        setNewCode(d.code);
+        refetch();
+      }
+    } catch {
+      setCreateError("Нет связи с сервером");
+    } finally {
+      setCreating(false);
+    }
   };
 
   const copyInviteLink = (code: string) => {
@@ -330,12 +343,18 @@ function InvitesPanel({ token }: { token: string | null }) {
             <span className="ml-1.5">Создать</span>
           </Button>
         </div>
+        {createError && (
+          <div className="mt-3 text-xs text-destructive bg-destructive/10 border border-destructive/20 rounded-lg px-3 py-2">
+            {createError}
+          </div>
+        )}
         {newCode && (
           <div className="mt-3 flex items-center gap-2 bg-primary/5 border border-primary/20 rounded-lg p-2.5">
             <code className="text-xs text-primary flex-1 truncate">{`${window.location.origin}/register?invite=${newCode}`}</code>
             <button
               onClick={() => copyInviteLink(newCode)}
               className="text-muted-foreground hover:text-primary transition-colors flex-shrink-0"
+              title="Скопировать"
             >
               <Icon name="Copy" size={13} />
             </button>
