@@ -242,8 +242,14 @@ export function PostFeed({ sectionId, title, showVideo = false }: { sectionId: s
 // ─── SubscribeSection ─────────────────────────────────────────────────────────
 
 export function SubscribeSection() {
+  const { token, refreshSubscription } = useAuth();
+  const AUTH_URL = func2url.auth;
   const [payMethod, setPayMethod] = useState<"auto" | "manual">("auto");
   const [plan, setPlan] = useState<"month" | "quarter" | "year" | "invite">("month");
+  const [inviteCode, setInviteCode] = useState("");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteError, setInviteError] = useState("");
+  const [inviteSuccess, setInviteSuccess] = useState("");
 
   const plans = [
     { id: "month",   label: "1 месяц",        price: "$97",       sub: "" },
@@ -251,6 +257,28 @@ export function SubscribeSection() {
     { id: "year",    label: "12 месяцев",      price: "$797",      sub: "−31%" },
     { id: "invite",  label: "По приглашению",  price: "Бесплатно", sub: "Бонус от автора" },
   ];
+
+  const handleUseInvite = async () => {
+    if (!inviteCode.trim()) { setInviteError("Введи код приглашения"); return; }
+    setInviteLoading(true);
+    setInviteError("");
+    setInviteSuccess("");
+    try {
+      const res = await fetch(`${AUTH_URL}?action=use_invite`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Auth-Token": token || "" },
+        body: JSON.stringify({ invite_code: inviteCode.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setInviteError(data.error || "Ошибка"); return; }
+      setInviteSuccess("Подписка активирована! Обновляю доступ...");
+      await refreshSubscription();
+    } catch {
+      setInviteError("Ошибка сети");
+    } finally {
+      setInviteLoading(false);
+    }
+  };
 
   return (
     <div className="animate-fade-in">
@@ -386,10 +414,28 @@ export function SubscribeSection() {
             <div className="text-xs text-muted-foreground mb-2">Введите код приглашения:</div>
             <input
               placeholder="INVITE-XXXXXX"
+              value={inviteCode}
+              onChange={e => setInviteCode(e.target.value)}
+              disabled={inviteLoading || !!inviteSuccess}
               className="w-full bg-secondary border border-border rounded px-3 py-2 text-sm font-mono text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors"
             />
           </div>
-          <button className="w-full py-2.5 bg-blue-500/20 text-blue-400 rounded text-sm font-display font-medium uppercase tracking-wide hover:bg-blue-500/30 transition-colors border border-blue-500/30">
+          {inviteError && (
+            <div className="mb-3 px-3 py-2 rounded bg-destructive/10 border border-destructive/20 text-xs text-destructive flex items-center gap-1.5">
+              <Icon name="AlertCircle" size={12} /> {inviteError}
+            </div>
+          )}
+          {inviteSuccess && (
+            <div className="mb-3 px-3 py-2 rounded bg-green/10 border border-green/20 text-xs text-green flex items-center gap-1.5">
+              <Icon name="CheckCircle" size={12} /> {inviteSuccess}
+            </div>
+          )}
+          <button
+            onClick={handleUseInvite}
+            disabled={inviteLoading || !!inviteSuccess}
+            className="w-full py-2.5 bg-blue-500/20 text-blue-400 rounded text-sm font-display font-medium uppercase tracking-wide hover:bg-blue-500/30 transition-colors border border-blue-500/30 disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {inviteLoading && <Icon name="Loader2" size={13} className="animate-spin" />}
             Активировать приглашение
           </button>
         </div>

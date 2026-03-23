@@ -1,9 +1,10 @@
 """
 Авторизация: регистрация, вход, выход, получение профиля.
-?action=register — создать аккаунт (POST)
-?action=login    — войти, получить токен (POST)
-?action=logout   — выйти (POST)
-?action=me       — получить данные текущего пользователя (GET)
+?action=register    — создать аккаунт (POST)
+?action=login       — войти, получить токен (POST)
+?action=logout      — выйти (POST)
+?action=me          — получить данные текущего пользователя (GET)
+?action=use_invite  — активировать инвайт для текущего пользователя (POST)
 """
 import json
 import os
@@ -204,6 +205,44 @@ def handler(event: dict, context) -> dict:
                 cur.execute("UPDATE users SET nickname = %s WHERE id = %s", (new_nickname, user["id"]))
                 conn.commit()
             return ok({"ok": True, "nickname": new_nickname})
+
+        # use_invite — активировать инвайт для уже залогиненного пользователя
+        if action == "use_invite":
+            if method != "POST":
+                return err("Метод не поддерживается", 405)
+            if not token:
+                return err("Не авторизован", 401)
+            user = get_user_by_token(conn, token)
+            if not user:
+                return err("Сессия истекла", 401)
+            invite_code = (body.get("invite_code") or "").strip()
+            if not invite_code:
+                return err("Введи код приглашения")
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT id FROM invites
+                    WHERE code = %s AND expires_at > NOW() AND used_by IS NULL
+                """, (invite_code,))
+                inv = cur.fetchone()
+                if not inv:
+                    return err("Код недействителен или уже использован")
+                invite_id = inv[0]
+                cur.execute("""
+                    SELECT id FROM subscriptions
+                    WHERE user_id = %s AND status = 'active' AND expires_at > NOW()
+                """, (user["id"],))
+                if cur.fetchone():
+                    return err("У тебя уже есть активная подписка")
+                expires = datetime.now(timezone.utc) + timedelta(days=30)
+                cur.execute("""
+                    INSERT INTO subscriptions (user_id, plan, status, expires_at)
+                    VALUES (%s, 'invite', 'active', %s)
+                """, (user["id"], expires))
+                cur.execute("""
+                    UPDATE invites SET used_by = %s, used_at = NOW() WHERE id = %s
+                """, (user["id"], invite_id))
+                conn.commit()
+            return ok({"ok": True, "expires_at": expires})
 
         return err("Неизвестное действие", 404)
     finally:
