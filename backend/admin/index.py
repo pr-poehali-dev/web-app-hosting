@@ -1,16 +1,18 @@
 """
 Панель администратора.
-?action=users         — GET  — список всех пользователей
-?action=user          — GET  — один пользователь (?user_id=)
-?action=block         — POST — заблокировать/разблокировать (?user_id=)
-?action=payments      — GET  — заявки на оплату (pending по умолчанию, ?status=all)
-?action=approve       — POST — подтвердить заявку (открывает подписку)
-?action=reject        — POST — отклонить заявку
-?action=grant         — POST — выдать подписку вручную
-?action=invites       — GET  — список инвайтов
-?action=create_invite — POST — создать инвайт
-?action=stats         — GET  — статистика
-?action=gdpr_export   — GET  — выгрузка согласия пользователя (?user_id=)
+?action=users          — GET  — список всех пользователей
+?action=user           — GET  — один пользователь (?user_id=)
+?action=block          — POST — заблокировать/разблокировать (?user_id=)
+?action=payments       — GET  — заявки на оплату (pending по умолчанию, ?status=all)
+?action=approve        — POST — подтвердить заявку (открывает подписку)
+?action=reject         — POST — отклонить заявку
+?action=grant          — POST — выдать подписку вручную
+?action=invites        — GET  — список инвайтов
+?action=create_invite  — POST — создать инвайт
+?action=stats          — GET  — статистика
+?action=gdpr_export    — GET  — выгрузка согласия пользователя (?user_id=)
+?action=chat_settings  — GET  — список настроек чатов
+?action=update_chat    — POST — обновить настройки одного чата
 """
 import json
 import os
@@ -299,6 +301,41 @@ def handler(event: dict, context) -> dict:
                     "registered_at": u[6],
                 }
             })
+
+        # GET /chat_settings
+        if action == "chat_settings":
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT channel_id, label, description, icon, is_enabled, is_readonly, sort_order
+                    FROM chat_settings ORDER BY sort_order
+                """)
+                rows = cur.fetchall()
+            return ok({"channels": [
+                {"channel_id": r[0], "label": r[1], "description": r[2], "icon": r[3],
+                 "is_enabled": r[4], "is_readonly": r[5], "sort_order": r[6]}
+                for r in rows
+            ]})
+
+        # POST /update_chat
+        if action == "update_chat":
+            if method != "POST":
+                return err("Метод не поддерживается", 405)
+            channel_id = body.get("channel_id")
+            if not channel_id:
+                return err("Укажи channel_id")
+            allowed_fields = {"label", "description", "icon", "is_enabled", "is_readonly", "sort_order"}
+            updates = {k: v for k, v in body.items() if k in allowed_fields}
+            if not updates:
+                return err("Нет полей для обновления")
+            set_parts = ", ".join(f"{k} = %s" for k in updates)
+            values = list(updates.values()) + [admin["id"], channel_id]
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"UPDATE chat_settings SET {set_parts}, updated_at = NOW(), updated_by = %s WHERE channel_id = %s",
+                    values
+                )
+                conn.commit()
+            return ok({"ok": True})
 
         return err("Неизвестное действие", 404)
     finally:

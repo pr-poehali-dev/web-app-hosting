@@ -15,6 +15,14 @@
       "expectedStatus": 403,
       "expectedBody": {"error": "Доступ запрещён"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET /chat_settings без токена — 403",
+      "method": "GET",
+      "path": "/?action=chat_settings",
+      "expectedStatus": 403,
+      "expectedBody": {"error": "Доступ запрещён"},
+      "bodyMatcher": "partial"
     }
   ]
 }

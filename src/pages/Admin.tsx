@@ -8,7 +8,7 @@ import func2url from "../../backend/func2url.json";
 
 const ADMIN_URL = func2url.admin;
 
-type Tab = "stats" | "users" | "payments" | "invites";
+type Tab = "stats" | "users" | "payments" | "invites" | "chats";
 
 function useAdminFetch(action: string, token: string | null, params = "") {
   const [data, setData] = useState<Record<string, unknown> | null>(null);
@@ -397,6 +397,131 @@ function InvitesPanel({ token }: { token: string | null }) {
   );
 }
 
+const ICONS = ["MessageSquare","Lightbulb","Gem","Flame","Wheat","Video","Wrench","KeyRound","BookOpen","Hash","Star","Bell"];
+
+function ChatsPanel({ token }: { token: string | null }) {
+  const { data, loading, error, refetch } = useAdminFetch("chat_settings", token);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [editLabel, setEditLabel] = useState<Record<string, string>>({});
+  const [editDesc, setEditDesc] = useState<Record<string, string>>({});
+
+  type Channel = { channel_id: string; label: string; description: string; icon: string; is_enabled: boolean; is_readonly: boolean; sort_order: number };
+  const channels: Channel[] = (data?.channels as Channel[]) || [];
+
+  useEffect(() => {
+    if (channels.length) {
+      const labels: Record<string, string> = {};
+      const descs: Record<string, string> = {};
+      channels.forEach(c => { labels[c.channel_id] = c.label; descs[c.channel_id] = c.description || ""; });
+      setEditLabel(labels);
+      setEditDesc(descs);
+    }
+  }, [data]);
+
+  const update = async (channel_id: string, patch: Record<string, unknown>) => {
+    if (!token) return;
+    setSaving(channel_id);
+    await fetch(`${ADMIN_URL}?action=update_chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": token },
+      body: JSON.stringify({ channel_id, ...patch }),
+    });
+    setSaving(null);
+    refetch();
+  };
+
+  if (loading) return <div className="text-center py-10 text-muted-foreground text-sm">Загрузка...</div>;
+  if (error) return <div className="text-destructive text-sm py-4">{error}</div>;
+
+  return (
+    <div className="space-y-3">
+      <div className="text-xs text-muted-foreground mb-4">
+        Управляй разделами: включай/выключай, меняй режим доступа, название и описание.
+      </div>
+      {channels.map(ch => (
+        <div key={ch.channel_id} className={`bg-card border rounded-xl p-4 transition-opacity ${!ch.is_enabled ? "opacity-50" : ""}`}>
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+              <Icon name={ch.icon} size={14} className="text-primary" fallback="MessageSquare" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <input
+                className="bg-transparent text-sm font-medium text-foreground w-full focus:outline-none border-b border-transparent focus:border-border transition-colors"
+                value={editLabel[ch.channel_id] ?? ch.label}
+                onChange={e => setEditLabel(p => ({ ...p, [ch.channel_id]: e.target.value }))}
+                onBlur={e => { if (e.target.value !== ch.label) update(ch.channel_id, { label: e.target.value }); }}
+              />
+              <input
+                className="bg-transparent text-xs text-muted-foreground w-full focus:outline-none border-b border-transparent focus:border-border transition-colors mt-0.5"
+                value={editDesc[ch.channel_id] ?? ch.description}
+                onChange={e => setEditDesc(p => ({ ...p, [ch.channel_id]: e.target.value }))}
+                onBlur={e => { if (e.target.value !== ch.description) update(ch.channel_id, { description: e.target.value }); }}
+                placeholder="Описание..."
+              />
+            </div>
+            {saving === ch.channel_id && <Icon name="Loader2" size={13} className="animate-spin text-muted-foreground flex-shrink-0" />}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Иконка */}
+            <select
+              value={ch.icon}
+              onChange={e => update(ch.channel_id, { icon: e.target.value })}
+              className="text-xs bg-secondary border border-border rounded px-2 py-1 text-foreground focus:outline-none"
+            >
+              {ICONS.map(ic => <option key={ic} value={ic}>{ic}</option>)}
+            </select>
+
+            {/* Включён/выключен */}
+            <button
+              onClick={() => update(ch.channel_id, { is_enabled: !ch.is_enabled })}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors border ${
+                ch.is_enabled
+                  ? "bg-green/10 text-green border-green/20 hover:bg-green/20"
+                  : "bg-muted text-muted-foreground border-border hover:bg-muted/80"
+              }`}
+            >
+              <Icon name={ch.is_enabled ? "Eye" : "EyeOff"} size={11} />
+              {ch.is_enabled ? "Включён" : "Выключен"}
+            </button>
+
+            {/* Режим */}
+            <button
+              onClick={() => update(ch.channel_id, { is_readonly: !ch.is_readonly })}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors border ${
+                ch.is_readonly
+                  ? "bg-amber-500/10 text-amber-400 border-amber-500/20 hover:bg-amber-500/20"
+                  : "bg-primary/10 text-primary border-primary/20 hover:bg-primary/20"
+              }`}
+            >
+              <Icon name={ch.is_readonly ? "Lock" : "MessageSquare"} size={11} />
+              {ch.is_readonly ? "Только чтение" : "Открытый чат"}
+            </button>
+
+            {/* Порядок */}
+            <div className="flex items-center gap-1 ml-auto">
+              <span className="text-xs text-muted-foreground">#{ch.sort_order}</span>
+              <button
+                disabled={ch.sort_order <= 1}
+                onClick={() => update(ch.channel_id, { sort_order: ch.sort_order - 1 })}
+                className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-30 transition-colors"
+              >
+                <Icon name="ChevronUp" size={12} />
+              </button>
+              <button
+                onClick={() => update(ch.channel_id, { sort_order: ch.sort_order + 1 })}
+                className="w-6 h-6 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                <Icon name="ChevronDown" size={12} />
+              </button>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function Admin() {
   const { user, token } = useAuth();
   const navigate = useNavigate();
@@ -418,6 +543,7 @@ export default function Admin() {
     { id: "users",    label: "Участники",    icon: "Users" },
     { id: "payments", label: "Оплаты",       icon: "CreditCard" },
     { id: "invites",  label: "Инвайты",      icon: "Link" },
+    { id: "chats",    label: "Чаты",         icon: "Settings2" },
   ];
 
   return (
@@ -455,6 +581,7 @@ export default function Admin() {
         {tab === "users"    && <UsersPanel token={token} />}
         {tab === "payments" && <PaymentsPanel token={token} />}
         {tab === "invites"  && <InvitesPanel token={token} />}
+        {tab === "chats"    && <ChatsPanel token={token} />}
       </main>
     </div>
   );

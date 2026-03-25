@@ -10,9 +10,13 @@ import psycopg2
 
 SCHEMA = os.environ.get("MAIN_DB_SCHEMA", "t_p91355423_web_app_hosting")
 
-ALLOWED_CHANNELS = {"chat", "metals", "oil", "products", "tech", "intraday", "video", "access_info", "knowledge"}
-# Каналы, куда могут писать только owner/admin
-READONLY_CHANNELS = {"intraday", "video", "access_info", "knowledge"}
+def get_channel_settings(conn):
+    with conn.cursor() as cur:
+        cur.execute("SELECT channel_id, is_enabled, is_readonly FROM chat_settings")
+        rows = cur.fetchall()
+    allowed = {r[0] for r in rows if r[1]}
+    readonly = {r[0] for r in rows if r[1] and r[2]}
+    return allowed, readonly
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -55,6 +59,7 @@ def handler(event: dict, context) -> dict:
     conn = get_conn()
     try:
         user = get_user_by_token(conn, token) if token else None
+        ALLOWED_CHANNELS, READONLY_CHANNELS = get_channel_settings(conn)
 
         # GET messages
         if action == "messages":
