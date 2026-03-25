@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import Icon from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
@@ -398,6 +399,7 @@ function InvitesPanel({ token }: { token: string | null }) {
 
 export default function Admin() {
   const { user, token } = useAuth();
+  const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("stats");
 
   if (!user || (user.role !== "owner" && user.role !== "admin")) {
@@ -422,6 +424,13 @@ export default function Admin() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card/90 backdrop-blur-sm sticky top-0 z-40">
         <div className="flex items-center gap-3 px-4 h-11">
+          <button
+            onClick={() => navigate("/")}
+            className="text-muted-foreground hover:text-foreground transition-colors"
+            title="Назад"
+          >
+            <Icon name="ArrowLeft" size={16} />
+          </button>
           <Icon name="Shield" size={15} className="text-primary" />
           <span className="font-display text-sm tracking-wider text-foreground uppercase">Админ-панель</span>
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-mono ml-auto">{user.role}</span>

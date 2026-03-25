@@ -1,0 +1,1 @@
+UPDATE users SET password_hash = '0d4ef6c6aa9c21fd722e1ab967b2094002afc46cce9f95a5ba46ce5f18388203' WHERE email = 'owner@tradeclub.ru';

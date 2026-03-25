@@ -147,6 +147,13 @@ export default function Index() {
         {/* ── Main content ── */}
         <main className="flex-1 overflow-y-auto pb-10">
           <div className="sticky top-0 z-10 px-4 py-2 bg-background/90 backdrop-blur-sm border-b border-border/50 flex items-center gap-2">
+            <button
+              className="md:hidden text-muted-foreground hover:text-foreground transition-colors mr-1"
+              onClick={() => setSidebarOpen(true)}
+              title="Меню"
+            >
+              <Icon name="LayoutList" size={13} />
+            </button>
             <Icon name={current.icon as string} size={13} className="text-muted-foreground" />
             <span className="text-xs text-muted-foreground">{current.label}</span>
             <span className="text-xs text-muted-foreground/40 ml-auto">{current.desc}</span>
