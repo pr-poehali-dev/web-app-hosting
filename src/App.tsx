@@ -9,6 +9,7 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import RestorePassword from "./pages/RestorePassword";
 import Paywall from "./pages/Paywall";
+import NoAccess from "./pages/NoAccess";
 import Admin from "./pages/Admin";
 import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
@@ -27,7 +28,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading, hasAccess, subLoading } = useAuth();
   if (loading || subLoading) return <Spinner />;
   if (!user) return <Navigate to="/login" replace />;
-  if (!hasAccess) return <Paywall />;
+  if (!hasAccess) return <NoAccess />;
   return <>{children}</>;
 }
 
@@ -45,12 +46,20 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
   return user ? <Navigate to="/" replace /> : <>{children}</>;
 }
 
+function AuthedRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return <Spinner />;
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/"        element={<PrivateRoute><Index /></PrivateRoute>} />
-      <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
-      <Route path="/admin"   element={<AdminRoute><Admin /></AdminRoute>} />
+      <Route path="/"          element={<PrivateRoute><Index /></PrivateRoute>} />
+      <Route path="/profile"   element={<PrivateRoute><Profile /></PrivateRoute>} />
+      <Route path="/subscribe" element={<AuthedRoute><Paywall /></AuthedRoute>} />
+      <Route path="/admin"     element={<AdminRoute><Admin /></AdminRoute>} />
       <Route path="/login"   element={<PublicRoute><Login /></PublicRoute>} />
       <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
       <Route path="/restore" element={<PublicRoute><RestorePassword /></PublicRoute>} />

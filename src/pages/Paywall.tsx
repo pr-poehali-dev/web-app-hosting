@@ -3,23 +3,9 @@ import { useAuth } from "@/context/AuthContext";
 import Icon from "@/components/ui/icon";
 import { Button } from "@/components/ui/button";
 import func2url from "../../backend/func2url.json";
+import { PLANS, FEATURES, PAYMENT_DETAILS } from "@/config/subscription";
 
 const SUBS_URL = func2url.subscriptions;
-
-const PLANS = [
-  { id: "month",    label: "1 месяц",   price: 2900,  per: "2 900 ₽ / мес",   badge: null },
-  { id: "quarter",  label: "3 месяца",  price: 7500,  per: "2 500 ₽ / мес",   badge: "−14%" },
-  { id: "halfyear", label: "6 месяцев", price: 13900, per: "2 317 ₽ / мес",   badge: "−20%" },
-  { id: "year",     label: "1 год",     price: 24900, per: "2 075 ₽ / мес",   badge: "Выгодно" },
-];
-
-const FEATURES = [
-  "Ежедневные торговые идеи от автора",
-  "Чаты по металлам, нефти, газу, продовольствию",
-  "Видео-обзоры рынков",
-  "База знаний по трейдингу",
-  "Техническая поддержка",
-];
 
 export default function Paywall({ onPaid }: { onPaid?: () => void }) {
   const { token } = useAuth();
@@ -69,6 +55,7 @@ export default function Paywall({ onPaid }: { onPaid?: () => void }) {
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || "Ошибка отправки");
       setStep("sent");
+      onPaid?.();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Ошибка");
     } finally {
@@ -85,7 +72,7 @@ export default function Paywall({ onPaid }: { onPaid?: () => void }) {
           </div>
           <h2 className="text-lg font-semibold text-foreground mb-2">Заявка отправлена</h2>
           <p className="text-sm text-muted-foreground mb-6">
-            Администратор проверит чек и откроет доступ в течение нескольких часов.
+            {PAYMENT_DETAILS.instructions}
           </p>
           <div className="bg-card border border-border rounded-xl p-4 text-left text-xs text-muted-foreground space-y-2">
             <div className="flex justify-between">
@@ -116,19 +103,31 @@ export default function Paywall({ onPaid }: { onPaid?: () => void }) {
 
           <div className="bg-card border border-border rounded-xl p-5 mb-4">
             <h2 className="text-base font-semibold text-foreground mb-1">Оплата подписки</h2>
-            <p className="text-xs text-muted-foreground mb-4">Тариф: <span className="text-foreground">{plan.label} — {plan.price.toLocaleString("ru")} ₽</span></p>
+            <p className="text-xs text-muted-foreground mb-4">
+              Тариф: <span className="text-foreground">{plan.label} — {plan.price.toLocaleString("ru")} ₽</span>
+            </p>
 
             <div className="bg-primary/5 border border-primary/20 rounded-lg p-4 mb-4">
-              <p className="text-xs text-muted-foreground mb-1">Переведи точную сумму на карту:</p>
+              <p className="text-xs text-muted-foreground mb-1">Переведи точную сумму:</p>
               <p className="text-2xl font-display tracking-wider text-foreground">{plan.price.toLocaleString("ru")} ₽</p>
-              <div className="mt-3 space-y-1 text-xs">
+              <div className="mt-3 space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Номер карты / телефон</span>
+                  <span className="text-foreground font-medium font-mono">{PAYMENT_DETAILS.cardNumber}</span>
+                </div>
+                {PAYMENT_DETAILS.bank && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Банк</span>
+                    <span className="text-foreground font-medium">{PAYMENT_DETAILS.bank}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Получатель</span>
-                  <span className="text-foreground font-medium">RTrading CLUB</span>
+                  <span className="text-foreground font-medium">{PAYMENT_DETAILS.recipient}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">В комментарии укажи</span>
-                  <span className="text-foreground font-medium">Подписка RTrading</span>
+                  <span className="text-muted-foreground">Комментарий</span>
+                  <span className="text-foreground font-medium">{PAYMENT_DETAILS.comment}</span>
                 </div>
               </div>
             </div>

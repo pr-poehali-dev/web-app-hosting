@@ -234,17 +234,50 @@ def handler(event: dict, context) -> dict:
             uid = body.get("user_id")
             plan = body.get("plan", "month")
             days = body.get("days")
+            expires_at_str = body.get("expires_at")
+            is_invite = bool(body.get("is_invite", False))
             if not uid:
                 return err("Укажи user_id")
-            d = days if days else PLANS.get(plan, {}).get("days", 30)
-            expires = datetime.now(timezone.utc) + timedelta(days=int(d))
+            if expires_at_str:
+                try:
+                    expires = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+                    if expires.tzinfo is None:
+                        expires = expires.replace(tzinfo=timezone.utc)
+                except Exception:
+                    return err("Неверный формат даты expires_at (ISO 8601)")
+            else:
+                d = days if days else PLANS.get(plan, {}).get("days", 30)
+                expires = datetime.now(timezone.utc) + timedelta(days=int(d))
+            actual_plan = "invite" if is_invite else plan
             with conn.cursor() as cur:
                 cur.execute("""
                     INSERT INTO subscriptions (user_id, plan, status, expires_at, created_by)
                     VALUES (%s, %s, 'active', %s, %s)
-                """, (uid, plan, expires, admin["id"]))
+                """, (uid, actual_plan, expires, admin["id"]))
                 conn.commit()
-            return ok({"ok": True, "expires_at": expires})
+            return ok({"ok": True, "expires_at": expires, "plan": actual_plan})
+
+        # POST /delete_user — удалить пользователя
+        if action == "delete_user":
+            if method != "POST":
+                return err("Метод не поддерживается", 405)
+            uid = body.get("user_id")
+            if not uid:
+                return err("Укажи user_id")
+            with conn.cursor() as cur:
+                cur.execute("SELECT role FROM users WHERE id = %s", (uid,))
+                row = cur.fetchone()
+                if not row:
+                    return err("Пользователь не найден", 404)
+                if row[0] == "owner":
+                    return err("Нельзя удалить владельца", 403)
+                cur.execute("DELETE FROM payment_requests WHERE user_id = %s", (uid,))
+                cur.execute("DELETE FROM subscriptions WHERE user_id = %s", (uid,))
+                cur.execute("DELETE FROM messages WHERE user_id = %s", (uid,))
+                cur.execute("DELETE FROM sessions WHERE user_id = %s", (uid,))
+                cur.execute("DELETE FROM users WHERE id = %s", (uid,))
+                conn.commit()
+            return ok({"ok": True})
 
         # GET /invites
         if action == "invites":
