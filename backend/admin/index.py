@@ -2,23 +2,30 @@
 Панель администратора.
 ?action=users          — GET  — список всех пользователей
 ?action=user           — GET  — один пользователь (?user_id=)
-?action=block          — POST — заблокировать/разблокировать (?user_id=)
+?action=block          — POST — заблокировать/разблокировать
 ?action=payments       — GET  — заявки на оплату (pending по умолчанию, ?status=all)
 ?action=approve        — POST — подтвердить заявку (открывает подписку)
 ?action=reject         — POST — отклонить заявку
 ?action=grant          — POST — выдать подписку вручную
+?action=delete_user    — POST — удалить пользователя
 ?action=invites        — GET  — список инвайтов
 ?action=create_invite  — POST — создать инвайт
 ?action=stats          — GET  — статистика
-?action=gdpr_export    — GET  — выгрузка согласия пользователя (?user_id=)
+?action=gdpr_export    — GET  — выгрузка согласия (?user_id=)
+?action=upload_receipt — POST — загрузить чек в S3, создать/обновить запись оплаты
+?action=user_receipts  — GET  — история оплат пользователя (?user_id=)
+?action=confirm_receipt — POST — сменить статус записи оплаты
 ?action=chat_settings  — GET  — список настроек чатов
 ?action=update_chat    — POST — обновить настройки одного чата
 """
 import json
 import os
 import secrets
+import base64
+import mimetypes
 from datetime import datetime, timedelta, timezone
 import psycopg2
+import boto3
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -27,12 +34,23 @@ CORS = {
 }
 
 PLANS = {
+    "week":     {"label": "1 неделя",  "days": 7},
     "month":    {"label": "1 месяц",   "days": 30},
     "quarter":  {"label": "3 месяца",  "days": 90},
-    "halfyear": {"label": "6 месяцев", "days": 180},
+    "halfyear": {"label": "Полгода",   "days": 180},
     "year":     {"label": "1 год",     "days": 365},
+    "loyal":    {"label": "Постоянный", "days": 30},
     "invite":   {"label": "Приглашение", "days": 30},
+    "custom":   {"label": "Особый",    "days": 30},
 }
+
+def get_s3():
+    return boto3.client(
+        "s3",
+        endpoint_url="https://bucket.poehali.dev",
+        aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+        aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"],
+    )
 
 def get_conn():
     return psycopg2.connect(os.environ["DATABASE_URL"])
@@ -126,7 +144,7 @@ def handler(event: dict, context) -> dict:
             with conn.cursor() as cur:
                 cur.execute("""
                     SELECT id, nickname, email, role, is_blocked, gdpr_consent,
-                           gdpr_consent_at, gdpr_consent_ip, created_at
+                           gdpr_consent_at, gdpr_consent_ip, gdpr_policy_version, created_at
                     FROM users WHERE id = %s
                 """, (uid,))
                 u = cur.fetchone()
@@ -138,16 +156,23 @@ def handler(event: dict, context) -> dict:
                 """, (uid,))
                 subs = cur.fetchall()
                 cur.execute("""
-                    SELECT id, plan, amount, status, receipt_url, comment, created_at
-                    FROM payment_requests WHERE user_id = %s ORDER BY created_at DESC LIMIT 10
+                    SELECT id, plan, amount, status, receipt_url, comment, payment_date, created_at
+                    FROM payment_requests WHERE user_id = %s ORDER BY created_at DESC LIMIT 20
                 """, (uid,))
                 payments = cur.fetchall()
+                cur.execute("""
+                    SELECT consented_at, policy_version, ip_address
+                    FROM gdpr_consents WHERE user_id = %s ORDER BY consented_at DESC LIMIT 1
+                """, (uid,))
+                consent_row = cur.fetchone()
             return ok({
                 "user": {"id": u[0], "nickname": u[1], "email": u[2], "role": u[3],
                          "is_blocked": u[4], "gdpr_consent": u[5],
-                         "gdpr_consent_at": u[6], "gdpr_consent_ip": u[7], "created_at": u[8]},
+                         "gdpr_consent_at": u[6], "gdpr_consent_ip": u[7],
+                         "gdpr_policy_version": u[8], "created_at": u[9]},
+                "gdpr_consent_record": {"consented_at": consent_row[0], "policy_version": consent_row[1], "ip_address": consent_row[2]} if consent_row else None,
                 "subscriptions": [{"id": s[0], "plan": s[1], "status": s[2], "started_at": s[3], "expires_at": s[4]} for s in subs],
-                "payment_requests": [{"id": p[0], "plan": p[1], "amount": p[2], "status": p[3], "receipt_url": p[4], "comment": p[5], "created_at": p[6]} for p in payments],
+                "payment_requests": [{"id": p[0], "plan": p[1], "amount": p[2], "status": p[3], "receipt_url": p[4], "comment": p[5], "payment_date": p[6], "created_at": p[7]} for p in payments],
             })
 
         # POST /block
@@ -321,19 +346,102 @@ def handler(event: dict, context) -> dict:
                 return err("Укажи user_id")
             with conn.cursor() as cur:
                 cur.execute("""
-                    SELECT id, nickname, email, gdpr_consent, gdpr_consent_at, gdpr_consent_ip, created_at
+                    SELECT id, nickname, email, gdpr_consent, gdpr_consent_at, gdpr_consent_ip,
+                           gdpr_policy_version, created_at
                     FROM users WHERE id = %s
                 """, (uid,))
                 u = cur.fetchone()
                 if not u:
                     return err("Пользователь не найден", 404)
+                cur.execute("""
+                    SELECT id, consented_at, policy_version, ip_address
+                    FROM gdpr_consents WHERE user_id = %s ORDER BY consented_at DESC
+                """, (uid,))
+                consents = cur.fetchall()
             return ok({
                 "gdpr": {
                     "user_id": u[0], "nickname": u[1], "email": u[2],
                     "consent": u[3], "consent_at": u[4], "consent_ip": u[5],
-                    "registered_at": u[6],
-                }
+                    "policy_version": u[6], "registered_at": u[7],
+                },
+                "consent_history": [
+                    {"id": c[0], "consented_at": c[1], "policy_version": c[2], "ip_address": c[3]}
+                    for c in consents
+                ],
             })
+
+        # POST /upload_receipt — загрузить чек об оплате (base64 изображение)
+        if action == "upload_receipt":
+            if method != "POST":
+                return err("Метод не поддерживается", 405)
+            uid = body.get("user_id")
+            plan = body.get("plan", "month")
+            amount = body.get("amount")
+            payment_date = body.get("payment_date")
+            file_data = body.get("file_data")
+            file_name = body.get("file_name", "receipt.jpg")
+            if not uid or not file_data:
+                return err("Укажи user_id и file_data")
+            with conn.cursor() as cur:
+                cur.execute("SELECT id FROM users WHERE id = %s", (uid,))
+                if not cur.fetchone():
+                    return err("Пользователь не найден", 404)
+            raw = base64.b64decode(file_data)
+            ext = file_name.rsplit(".", 1)[-1].lower() if "." in file_name else "jpg"
+            content_type = mimetypes.guess_type(f"x.{ext}")[0] or "image/jpeg"
+            key = f"receipts/{uid}/{secrets.token_hex(8)}.{ext}"
+            s3 = get_s3()
+            s3.put_object(Bucket="files", Key=key, Body=raw, ContentType=content_type)
+            cdn_url = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO payment_requests (user_id, plan, amount, status, receipt_url, payment_date)
+                    VALUES (%s, %s, %s, 'pending', %s, %s) RETURNING id
+                """, (uid, plan, amount or 0, cdn_url, payment_date))
+                req_id = cur.fetchone()[0]
+                conn.commit()
+            return ok({"ok": True, "receipt_id": req_id, "receipt_url": cdn_url}, 201)
+
+        # GET /user_receipts?user_id=
+        if action == "user_receipts":
+            uid = qs.get("user_id")
+            if not uid:
+                return err("Укажи user_id")
+            with conn.cursor() as cur:
+                cur.execute("""
+                    SELECT pr.id, pr.plan, pr.amount, pr.status, pr.receipt_url,
+                           pr.comment, pr.payment_date, pr.created_at,
+                           u.nickname as reviewed_by
+                    FROM payment_requests pr
+                    LEFT JOIN users u ON u.id = pr.reviewed_by
+                    WHERE pr.user_id = %s
+                    ORDER BY pr.created_at DESC
+                """, (uid,))
+                rows = cur.fetchall()
+            return ok({"receipts": [
+                {"id": r[0], "plan": r[1], "amount": r[2], "status": r[3],
+                 "receipt_url": r[4], "comment": r[5], "payment_date": r[6],
+                 "created_at": r[7], "reviewed_by": r[8],
+                 "plan_label": PLANS.get(r[1], {}).get("label", r[1])}
+                for r in rows
+            ]})
+
+        # POST /confirm_receipt — подтвердить или отклонить запись оплаты
+        if action == "confirm_receipt":
+            if method != "POST":
+                return err("Метод не поддерживается", 405)
+            req_id = body.get("receipt_id")
+            new_status = body.get("status")
+            if not req_id or new_status not in ("pending", "confirmed", "rejected"):
+                return err("Укажи receipt_id и status (pending|confirmed|rejected)")
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE payment_requests
+                    SET status = %s, reviewed_by = %s, reviewed_at = NOW()
+                    WHERE id = %s
+                """, (new_status, admin["id"], req_id))
+                conn.commit()
+            return ok({"ok": True})
 
         # GET /chat_settings
         if action == "chat_settings":

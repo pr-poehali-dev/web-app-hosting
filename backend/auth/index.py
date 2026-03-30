@@ -97,12 +97,17 @@ def handler(event: dict, context) -> dict:
 
                 pw_hash = hash_password(password)
                 cur.execute("""
-                    INSERT INTO users (nickname, email, password_hash, role, gdpr_consent, gdpr_consent_at, gdpr_consent_ip)
-                    VALUES (%s, %s, %s, 'subscriber', TRUE, NOW(), %s)
+                    INSERT INTO users (nickname, email, password_hash, role, gdpr_consent, gdpr_consent_at, gdpr_consent_ip, gdpr_policy_version)
+                    VALUES (%s, %s, %s, 'subscriber', TRUE, NOW(), %s, 'v1.0')
                     RETURNING id, nickname, email, role
                 """, (nickname, email, pw_hash, ip))
                 user = cur.fetchone()
                 user_id = user[0]
+
+                cur.execute("""
+                    INSERT INTO gdpr_consents (user_id, email, policy_version, ip_address, user_agent)
+                    VALUES (%s, %s, 'v1.0', %s, %s)
+                """, (user_id, email, ip, (event.get("headers") or {}).get("User-Agent", "")))
 
                 if invite_id:
                     cur.execute("UPDATE invites SET used_by = %s, used_at = NOW() WHERE id = %s", (user_id, invite_id))

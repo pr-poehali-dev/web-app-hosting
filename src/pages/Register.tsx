@@ -134,9 +134,16 @@ export default function Register() {
                 className="mt-0.5"
               />
               <Label htmlFor="gdpr" className="text-xs text-muted-foreground leading-relaxed cursor-pointer">
-                Я согласен на{" "}
-                <span className="text-foreground underline underline-offset-2">обработку персональных данных</span>{" "}
-                в соответствии с ФЗ-152. Дата и IP фиксируются.
+                Я согласен с{" "}
+                <Link
+                  to="/privacy"
+                  target="_blank"
+                  className="text-foreground underline underline-offset-2 hover:text-primary transition-colors"
+                  onClick={e => e.stopPropagation()}
+                >
+                  политикой конфиденциальности
+                </Link>{" "}
+                и обработкой персональных данных в соответствии с ФЗ-152
               </Label>
             </div>
 

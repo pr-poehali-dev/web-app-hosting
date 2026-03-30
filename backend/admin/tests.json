@@ -23,6 +23,22 @@
       "expectedStatus": 403,
       "expectedBody": {"error": "Доступ запрещён"},
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET /user_receipts без токена — 403",
+      "method": "GET",
+      "path": "/?action=user_receipts&user_id=1",
+      "expectedStatus": 403,
+      "expectedBody": {"error": "Доступ запрещён"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "GET /gdpr_export без токена — 403",
+      "method": "GET",
+      "path": "/?action=gdpr_export&user_id=1",
+      "expectedStatus": 403,
+      "expectedBody": {"error": "Доступ запрещён"},
+      "bodyMatcher": "partial"
     }
   ]
 }

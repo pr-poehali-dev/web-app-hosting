@@ -52,14 +52,313 @@ function StatsPanel({ token }: { token: string | null }) {
   );
 }
 
-function UsersPanel({ token }: { token: string | null }) {
-  const { data, loading, refetch } = useAdminFetch("users", token);
-  const [blocking, setBlocking] = useState<number | null>(null);
-  const [grantUser, setGrantUser] = useState<number | null>(null);
+type ReceiptRecord = { id: number; plan: string; plan_label: string; amount: number; status: string; receipt_url: string | null; payment_date: string | null; created_at: string };
+type GdprRecord = { consented_at: string; policy_version: string; ip_address: string } | null;
+
+function UserCard({ u, token, onRefetch }: { u: Record<string, unknown>; token: string | null; onRefetch: () => void }) {
+  const uid = u.id as number;
+  const role = u.role as string;
+  const isBlocked = u.is_blocked as boolean;
+  const sub = u.subscription as { plan?: string; expires_at?: string } | null;
+
+  const [expanded, setExpanded] = useState(false);
+  const [grantOpen, setGrantOpen] = useState(false);
   const [grantMode, setGrantMode] = useState<"preset" | "date" | "invite">("preset");
   const [grantPlan, setGrantPlan] = useState("month");
   const [grantDate, setGrantDate] = useState("");
-  const [delConfirm, setDelConfirm] = useState<number | null>(null);
+  const [delConfirm, setDelConfirm] = useState(false);
+  const [blocking, setBlocking] = useState(false);
+
+  const [receipts, setReceipts] = useState<ReceiptRecord[]>([]);
+  const [gdpr, setGdpr] = useState<GdprRecord>(null);
+  const [detailLoaded, setDetailLoaded] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [receiptPlan, setReceiptPlan] = useState("month");
+  const [receiptAmount, setReceiptAmount] = useState("");
+  const [receiptDate, setReceiptDate] = useState(new Date().toISOString().split("T")[0]);
+  const [uploadOpen, setUploadOpen] = useState(false);
+
+  const loadDetail = async () => {
+    if (detailLoaded) return;
+    const r = await fetch(`${ADMIN_URL}?action=user&user_id=${uid}`, { headers: { "X-Auth-Token": token || "" } });
+    const d = await r.json();
+    setReceipts((d.payment_requests || []).map((p: Record<string, unknown>) => ({
+      id: p.id, plan: p.plan, plan_label: p.plan || "", amount: p.amount,
+      status: p.status, receipt_url: p.receipt_url, payment_date: p.payment_date, created_at: p.created_at,
+    })));
+    setGdpr(d.gdpr_consent_record || null);
+    setDetailLoaded(true);
+  };
+
+  const handleExpand = () => {
+    if (!expanded) loadDetail();
+    setExpanded(!expanded);
+  };
+
+  const block = async () => {
+    setBlocking(true);
+    await fetch(`${ADMIN_URL}?action=block`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": token || "" },
+      body: JSON.stringify({ user_id: uid, blocked: !isBlocked }),
+    });
+    setBlocking(false);
+    onRefetch();
+  };
+
+  const grant = async () => {
+    const body: Record<string, unknown> = { user_id: uid };
+    if (grantMode === "invite") { body.plan = "month"; body.is_invite = true; }
+    else if (grantMode === "date" && grantDate) { body.plan = "custom"; body.expires_at = new Date(grantDate).toISOString(); }
+    else { body.plan = grantPlan; }
+    await fetch(`${ADMIN_URL}?action=grant`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": token || "" },
+      body: JSON.stringify(body),
+    });
+    setGrantOpen(false);
+    onRefetch();
+  };
+
+  const deleteUser = async () => {
+    await fetch(`${ADMIN_URL}?action=delete_user`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": token || "" },
+      body: JSON.stringify({ user_id: uid }),
+    });
+    onRefetch();
+  };
+
+  const uploadReceipt = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadLoading(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = (reader.result as string).split(",")[1];
+      await fetch(`${ADMIN_URL}?action=upload_receipt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Auth-Token": token || "" },
+        body: JSON.stringify({
+          user_id: uid,
+          plan: receiptPlan,
+          amount: parseInt(receiptAmount) || 0,
+          payment_date: receiptDate,
+          file_data: base64,
+          file_name: file.name,
+        }),
+      });
+      setUploadLoading(false);
+      setUploadOpen(false);
+      setDetailLoaded(false);
+      loadDetail();
+    };
+    reader.readAsDataURL(file);
+    e.target.value = "";
+  };
+
+  const confirmReceipt = async (receiptId: number, status: string) => {
+    await fetch(`${ADMIN_URL}?action=confirm_receipt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Auth-Token": token || "" },
+      body: JSON.stringify({ receipt_id: receiptId, status }),
+    });
+    setDetailLoaded(false);
+    loadDetail();
+  };
+
+  const statusBadge = (s: string) => {
+    if (s === "confirmed" || s === "approved") return <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-600">Подтверждено</span>;
+    if (s === "rejected") return <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">Отклонено</span>;
+    return <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-500/10 text-yellow-600">Ожидает</span>;
+  };
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      <div className="p-3 flex items-start gap-3">
+        <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-display text-primary flex-shrink-0">
+          {(u.nickname as string).slice(0, 2).toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-sm font-medium text-foreground">{u.nickname as string}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">{role}</span>
+            {isBlocked && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">Заблокирован</span>}
+            {sub ? (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-600">
+                VIP до {new Date(sub.expires_at!).toLocaleDateString("ru")}
+              </span>
+            ) : (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">Нет подписки</span>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground mt-0.5">{u.email as string}</div>
+        </div>
+        <div className="flex gap-1 flex-shrink-0 items-center">
+          <button onClick={() => { setGrantOpen(!grantOpen); setDelConfirm(false); if (!expanded) { setExpanded(true); loadDetail(); } }}
+            title="Выдать подписку" className="w-7 h-7 flex items-center justify-center rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors">
+            <Icon name="Gift" size={13} />
+          </button>
+          {role !== "owner" && (
+            <>
+              <button onClick={block} disabled={blocking} title={isBlocked ? "Разблокировать" : "Заблокировать"}
+                className={`w-7 h-7 flex items-center justify-center rounded transition-colors ${isBlocked ? "text-green-600 hover:bg-green-500/10" : "text-muted-foreground hover:text-destructive hover:bg-destructive/10"}`}>
+                <Icon name={isBlocked ? "Unlock" : "Ban"} size={13} />
+              </button>
+              <button onClick={() => { setDelConfirm(!delConfirm); setGrantOpen(false); }} title="Удалить"
+                className="w-7 h-7 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
+                <Icon name="Trash2" size={13} />
+              </button>
+            </>
+          )}
+          <button onClick={handleExpand} title="Подробнее"
+            className="w-7 h-7 flex items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
+            <Icon name={expanded ? "ChevronUp" : "ChevronDown"} size={13} />
+          </button>
+        </div>
+      </div>
+
+      {grantOpen && (
+        <div className="px-3 pb-3 border-t border-border pt-3 space-y-2">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">Выдать VIP-доступ</p>
+          <div className="flex gap-1.5">
+            {(["preset", "date", "invite"] as const).map(m => (
+              <button key={m} onClick={() => setGrantMode(m)}
+                className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${grantMode === m ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"}`}>
+                {m === "preset" ? "Тариф" : m === "date" ? "До даты" : "По приглашению"}
+              </button>
+            ))}
+          </div>
+          {grantMode === "preset" && (
+            <select value={grantPlan} onChange={e => setGrantPlan(e.target.value)}
+              className="text-xs bg-background border border-border rounded px-2 py-1.5 text-foreground w-full">
+              <option value="week">1 неделя (7 дней) — 1 700 ₽</option>
+              <option value="month">1 месяц (30 дней) — 4 000 ₽</option>
+              <option value="quarter">3 месяца (90 дней) — 10 300 ₽</option>
+              <option value="halfyear">Полгода (180 дней) — 20 000 ₽</option>
+              <option value="loyal">Постоянный (30 дней) — 3 400 ₽</option>
+            </select>
+          )}
+          {grantMode === "date" && (
+            <input type="date" value={grantDate} onChange={e => setGrantDate(e.target.value)}
+              className="text-xs bg-background border border-border rounded px-2 py-1.5 text-foreground w-full"
+              min={new Date().toISOString().split("T")[0]} />
+          )}
+          {grantMode === "invite" && <p className="text-[10px] text-muted-foreground">Бесплатный доступ на 30 дней, план «invite»</p>}
+          <div className="flex gap-2">
+            <Button size="sm" className="h-7 text-xs flex-1" onClick={grant}>Выдать</Button>
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setGrantOpen(false)}>Отмена</Button>
+          </div>
+        </div>
+      )}
+
+      {delConfirm && (
+        <div className="px-3 pb-3 border-t border-border pt-3 bg-destructive/5">
+          <p className="text-xs text-destructive mb-2">Удалить пользователя безвозвратно?</p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="destructive" className="h-7 text-xs flex-1" onClick={deleteUser}>Удалить</Button>
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setDelConfirm(false)}>Отмена</Button>
+          </div>
+        </div>
+      )}
+
+      {expanded && (
+        <div className="border-t border-border px-3 py-3 space-y-4">
+          {/* GDPR — 152-ФЗ */}
+          <div>
+            <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Согласие 152-ФЗ</p>
+            {gdpr ? (
+              <div className="bg-muted/40 rounded-lg px-3 py-2 text-xs space-y-0.5">
+                <div className="flex gap-2"><span className="text-muted-foreground w-24">Дата:</span><span>{new Date(gdpr.consented_at).toLocaleString("ru")}</span></div>
+                <div className="flex gap-2"><span className="text-muted-foreground w-24">Версия:</span><span>{gdpr.policy_version}</span></div>
+                <div className="flex gap-2"><span className="text-muted-foreground w-24">IP:</span><span className="font-mono">{gdpr.ip_address}</span></div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground italic">Запись о согласии отсутствует (регистрация до обновления)</p>
+            )}
+          </div>
+
+          {/* История оплат */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">История оплат</p>
+              <button onClick={() => setUploadOpen(!uploadOpen)}
+                className="text-[10px] flex items-center gap-1 text-primary hover:underline">
+                <Icon name="Upload" size={11} />Загрузить чек
+              </button>
+            </div>
+
+            {uploadOpen && (
+              <div className="mb-3 bg-muted/40 rounded-lg p-3 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <select value={receiptPlan} onChange={e => setReceiptPlan(e.target.value)}
+                    className="text-xs bg-background border border-border rounded px-2 py-1.5 text-foreground col-span-2">
+                    <option value="week">1 неделя — 1 700 ₽</option>
+                    <option value="month">1 месяц — 4 000 ₽</option>
+                    <option value="quarter">3 месяца — 10 300 ₽</option>
+                    <option value="halfyear">Полгода — 20 000 ₽</option>
+                    <option value="loyal">Постоянный — 3 400 ₽</option>
+                  </select>
+                  <input type="number" placeholder="Сумма ₽" value={receiptAmount} onChange={e => setReceiptAmount(e.target.value)}
+                    className="text-xs bg-background border border-border rounded px-2 py-1.5 text-foreground" />
+                  <input type="date" value={receiptDate} onChange={e => setReceiptDate(e.target.value)}
+                    className="text-xs bg-background border border-border rounded px-2 py-1.5 text-foreground" />
+                </div>
+                <label className={`flex items-center gap-2 justify-center w-full h-8 border border-dashed border-border rounded cursor-pointer text-xs text-muted-foreground hover:text-foreground hover:border-primary transition-colors ${uploadLoading ? "opacity-50 pointer-events-none" : ""}`}>
+                  <Icon name={uploadLoading ? "Loader2" : "ImagePlus"} size={13} className={uploadLoading ? "animate-spin" : ""} />
+                  {uploadLoading ? "Загружаю..." : "Выбрать файл"}
+                  <input type="file" accept="image/*,application/pdf" className="hidden" onChange={uploadReceipt} />
+                </label>
+              </div>
+            )}
+
+            {receipts.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic">Нет записей об оплате</p>
+            ) : (
+              <div className="space-y-2">
+                {receipts.map(r => (
+                  <div key={r.id} className="bg-muted/30 rounded-lg px-3 py-2 text-xs">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div>
+                        <span className="font-medium">{r.plan_label || r.plan}</span>
+                        {r.amount > 0 && <span className="ml-2 text-muted-foreground">{r.amount.toLocaleString("ru")} ₽</span>}
+                        {r.payment_date && <span className="ml-2 text-muted-foreground">{new Date(r.payment_date).toLocaleDateString("ru")}</span>}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {statusBadge(r.status)}
+                        {r.receipt_url && (
+                          <a href={r.receipt_url} target="_blank" rel="noreferrer"
+                            className="text-primary hover:underline flex items-center gap-0.5">
+                            <Icon name="ExternalLink" size={11} />чек
+                          </a>
+                        )}
+                        {r.status === "pending" && (
+                          <button onClick={() => confirmReceipt(r.id, "confirmed")}
+                            className="text-green-600 hover:underline flex items-center gap-0.5">
+                            <Icon name="Check" size={11} />ок
+                          </button>
+                        )}
+                        {r.status === "pending" && (
+                          <button onClick={() => confirmReceipt(r.id, "rejected")}
+                            className="text-destructive hover:underline flex items-center gap-0.5">
+                            <Icon name="X" size={11} />нет
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UsersPanel({ token }: { token: string | null }) {
+  const { data, loading, refetch } = useAdminFetch("users", token);
   const [search, setSearch] = useState("");
 
   const users = (data as { users?: Record<string, unknown>[] } | null)?.users || [];
@@ -67,173 +366,17 @@ function UsersPanel({ token }: { token: string | null }) {
     ? users.filter(u => (u.email as string).toLowerCase().includes(search.toLowerCase()) || (u.nickname as string).toLowerCase().includes(search.toLowerCase()))
     : users;
 
-  const block = async (uid: number, blocked: boolean) => {
-    setBlocking(uid);
-    await fetch(`${ADMIN_URL}?action=block`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Auth-Token": token || "" },
-      body: JSON.stringify({ user_id: uid, blocked }),
-    });
-    setBlocking(null);
-    refetch();
-  };
-
-  const grant = async (uid: number) => {
-    const body: Record<string, unknown> = { user_id: uid };
-    if (grantMode === "invite") {
-      body.plan = "month";
-      body.is_invite = true;
-    } else if (grantMode === "date" && grantDate) {
-      body.plan = "custom";
-      body.expires_at = new Date(grantDate).toISOString();
-    } else {
-      body.plan = grantPlan;
-    }
-    await fetch(`${ADMIN_URL}?action=grant`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Auth-Token": token || "" },
-      body: JSON.stringify(body),
-    });
-    setGrantUser(null);
-    refetch();
-  };
-
-  const deleteUser = async (uid: number) => {
-    await fetch(`${ADMIN_URL}?action=delete_user`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Auth-Token": token || "" },
-      body: JSON.stringify({ user_id: uid }),
-    });
-    setDelConfirm(null);
-    refetch();
-  };
-
   if (loading) return <div className="flex justify-center py-10"><div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>;
 
   return (
     <div>
       <div className="mb-3">
-        <Input
-          placeholder="Поиск по email или нику..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="text-sm"
-        />
+        <Input placeholder="Поиск по email или нику..." value={search} onChange={e => setSearch(e.target.value)} className="text-sm" />
       </div>
       <div className="space-y-2">
-        {filtered.map((u: Record<string, unknown>) => {
-          const sub = u.subscription as { plan?: string; expires_at?: string } | null;
-          const isBlocked = u.is_blocked as boolean;
-          const uid = u.id as number;
-          const role = u.role as string;
-          return (
-            <div key={uid} className="bg-card border border-border rounded-xl p-3 flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-display text-primary flex-shrink-0">
-                {(u.nickname as string).slice(0, 2).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium text-foreground">{u.nickname as string}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">{role}</span>
-                  {isBlocked && <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">Заблокирован</span>}
-                  {sub ? (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-green/10 text-green">
-                      VIP до {new Date(sub.expires_at!).toLocaleDateString("ru")}
-                    </span>
-                  ) : (
-                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">Нет подписки</span>
-                  )}
-                </div>
-                <div className="text-xs text-muted-foreground mt-0.5">{u.email as string}</div>
-
-                {grantUser === uid && (
-                  <div className="mt-2 space-y-2">
-                    <div className="flex gap-1.5">
-                      {(["preset", "date", "invite"] as const).map(m => (
-                        <button
-                          key={m}
-                          onClick={() => setGrantMode(m)}
-                          className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${
-                            grantMode === m ? "border-primary bg-primary/10 text-primary" : "border-border text-muted-foreground"
-                          }`}
-                        >
-                          {m === "preset" ? "Тариф" : m === "date" ? "До даты" : "По приглашению"}
-                        </button>
-                      ))}
-                    </div>
-                    {grantMode === "preset" && (
-                      <select
-                        value={grantPlan}
-                        onChange={e => setGrantPlan(e.target.value)}
-                        className="text-xs bg-background border border-border rounded px-2 py-1.5 text-foreground w-full"
-                      >
-                        <option value="month">1 месяц (30 дней)</option>
-                        <option value="quarter">3 месяца (90 дней)</option>
-                        <option value="halfyear">6 месяцев (180 дней)</option>
-                        <option value="year">1 год (365 дней)</option>
-                      </select>
-                    )}
-                    {grantMode === "date" && (
-                      <input
-                        type="date"
-                        value={grantDate}
-                        onChange={e => setGrantDate(e.target.value)}
-                        className="text-xs bg-background border border-border rounded px-2 py-1.5 text-foreground w-full"
-                        min={new Date().toISOString().split("T")[0]}
-                      />
-                    )}
-                    {grantMode === "invite" && (
-                      <p className="text-[10px] text-muted-foreground">Бесплатный доступ на 30 дней, план «invite»</p>
-                    )}
-                    <div className="flex gap-2">
-                      <Button size="sm" className="h-7 text-xs flex-1" onClick={() => grant(uid)}>Выдать</Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setGrantUser(null)}>Отмена</Button>
-                    </div>
-                  </div>
-                )}
-
-                {delConfirm === uid && (
-                  <div className="mt-2 bg-destructive/5 border border-destructive/20 rounded-lg p-2.5 space-y-2">
-                    <p className="text-xs text-destructive">Удалить пользователя безвозвратно?</p>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="destructive" className="h-7 text-xs flex-1" onClick={() => deleteUser(uid)}>Удалить</Button>
-                      <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setDelConfirm(null)}>Отмена</Button>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="flex gap-1 flex-shrink-0">
-                <button
-                  onClick={() => { setGrantUser(grantUser === uid ? null : uid); setDelConfirm(null); }}
-                  title="Выдать / продлить подписку"
-                  className="w-7 h-7 flex items-center justify-center rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                >
-                  <Icon name="Gift" size={13} />
-                </button>
-                {role === "subscriber" && (
-                  <>
-                    <button
-                      onClick={() => block(uid, !isBlocked)}
-                      disabled={blocking === uid}
-                      title={isBlocked ? "Разблокировать" : "Заблокировать"}
-                      className={`w-7 h-7 flex items-center justify-center rounded transition-colors
-                        ${isBlocked ? "text-green hover:bg-green/10" : "text-muted-foreground hover:text-destructive hover:bg-destructive/10"}`}
-                    >
-                      <Icon name={isBlocked ? "Unlock" : "Ban"} size={13} />
-                    </button>
-                    <button
-                      onClick={() => { setDelConfirm(delConfirm === uid ? null : uid); setGrantUser(null); }}
-                      title="Удалить пользователя"
-                      className="w-7 h-7 flex items-center justify-center rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                    >
-                      <Icon name="Trash2" size={13} />
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          );
-        })}
+        {filtered.map((u: Record<string, unknown>) => (
+          <UserCard key={u.id as number} u={u} token={token} onRefetch={refetch} />
+        ))}
         {filtered.length === 0 && (
           <p className="text-sm text-muted-foreground text-center py-8">Пользователи не найдены</p>
         )}
